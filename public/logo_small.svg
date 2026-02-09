@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Business travel icon">
+  <title>Business Travel</title>
+  <defs>
+    <style>
+      .stroke{fill:none;stroke:currentColor;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+      .fill{fill:currentColor}
+    </style>
+  </defs>
+
+  <!-- Suitcase -->
+  <rect class="stroke" x="18" y="22" width="28" height="26" rx="3" />
+  <path class="stroke" d="M26 22v-4.5c0-1.4 1.1-2.5 2.5-2.5h7c1.4 0 2.5 1.1 2.5 2.5V22" />
+  <path class="stroke" d="M18 33h28" />
+
+  <!-- Wheels -->
+  <circle class="stroke" cx="24" cy="52" r="2.5" />
+  <circle class="stroke" cx="40" cy="52" r="2.5" />
+
+  <!-- Airplane (simple silhouette) -->
+  <!-- <path class="fill" d="M53.5 15.2c-.6-.6-1.6-.6-2.2 0l-7.7 7.7-4.1-1.1 3.3-3.3c.6-.6.6-1.6 0-2.2s-1.6-.6-2.2 0l-4.2 4.2-6.3-1.7c-1-.3-2.1 0-2.8.7l-.7.7 10.7 2.9-4.5 4.5-3.7-.4-1.9 1.9 4.1 1.1 1.1 4.1 1.9-1.9-.4-3.7 4.5-4.5 2.9 10.7.7-.7c.7-.7 1-1.8.7-2.8L42 26.6l4.2-4.2 1.1 4.1 7.7-7.7c.6-.6.6-1.6 0-2.2l-1.5-1.4z"/> -->
+</svg>
