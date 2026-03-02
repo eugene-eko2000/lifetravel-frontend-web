@@ -63,7 +63,7 @@ export default function Home() {
     setMessages((prev) => [...prev, assistantMessage]);
 
     // Establish WebSocket connection
-    const wsUrl = `${INGRESS_API}/api/v1/prompt`;
+    const wsUrl = `${INGRESS_API}/api/v1/itinerary`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
