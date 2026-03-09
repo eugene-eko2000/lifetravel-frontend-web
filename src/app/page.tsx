@@ -394,7 +394,10 @@ export default function Home() {
                       </p>
                     )}
                     {entry.data.payload && (
-                      <pre className="mt-2 whitespace-pre-wrap rounded-md bg-black/5 p-2 text-xs">
+                      <pre
+                        className="mt-2 whitespace-pre-wrap rounded-md bg-black/5 p-2 text-xs"
+                        style={{ color: messageColor }}
+                      >
                         {JSON.stringify(entry.data.payload, null, 2)}
                       </pre>
                     )}
