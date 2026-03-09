@@ -32,41 +32,34 @@ const formatJsonIfPossible = (content: string) => {
   }
 };
 
-const parseDebugMessage = (rawData: string): DebugMessage => {
-  try {
-    const parsed = JSON.parse(rawData) as unknown;
-    if (
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "message" in parsed &&
-      typeof (parsed as { message: unknown }).message === "string"
-    ) {
-      const value = parsed as Partial<DebugMessage>;
-      return {
-        id: typeof value.id === "string" ? value.id : undefined,
-        request_id: typeof value.request_id === "string" ? value.request_id : undefined,
-        message: value.message as string,
-        source: typeof value.source === "string" ? value.source : undefined,
-        level:
-          value.level === "debug" ||
-          value.level === "info" ||
-          value.level === "warning" ||
-          value.level === "error"
-            ? value.level
-            : undefined,
-        payload:
-          value.payload && typeof value.payload === "object"
-            ? (value.payload as Record<string, unknown>)
-            : undefined,
-      };
-    }
-  } catch {
-    // Fallback to raw text if message is not JSON
+const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessage => {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "message" in value &&
+    typeof (value as { message: unknown }).message === "string"
+  ) {
+    const data = value as Partial<DebugMessage>;
+    return {
+      id: typeof data.id === "string" ? data.id : undefined,
+      request_id: typeof data.request_id === "string" ? data.request_id : undefined,
+      message: data.message as string,
+      source: typeof data.source === "string" ? data.source : undefined,
+      level:
+        data.level === "debug" ||
+        data.level === "info" ||
+        data.level === "warning" ||
+        data.level === "error"
+          ? data.level
+          : undefined,
+      payload:
+        data.payload && typeof data.payload === "object"
+          ? (data.payload as Record<string, unknown>)
+          : undefined,
+    };
   }
 
-  return {
-    message: rawData,
-  };
+  return { message: fallbackMessage };
 };
 
 export default function Home() {
@@ -80,7 +73,6 @@ export default function Home() {
   const debugMessagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const debugWsRef = useRef<WebSocket | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
 
@@ -105,10 +97,6 @@ export default function Home() {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
-      }
-      if (debugWsRef.current) {
-        debugWsRef.current.close();
-        debugWsRef.current = null;
       }
     };
   }, []);
@@ -167,30 +155,6 @@ export default function Home() {
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
-    // Establish debug WebSocket connection
-    if (debugWsRef.current) {
-      debugWsRef.current.close();
-      debugWsRef.current = null;
-    }
-    const debugWsUrl = `${INGRESS_API}/api/v1/debug`;
-    const debugWs = new WebSocket(debugWsUrl);
-    debugWsRef.current = debugWs;
-
-    debugWs.onmessage = (event) => {
-      const rawData = typeof event.data === "string" ? event.data : String(event.data);
-      const parsed = parseDebugMessage(rawData);
-      console.log("Debug websocket message:", parsed);
-      setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: parsed }]);
-    };
-
-    debugWs.onerror = () => {
-      console.error("Debug websocket connection error.");
-    };
-
-    debugWs.onclose = () => {
-      debugWsRef.current = null;
-    };
-
     ws.onopen = () => {
       setIsConnecting(false);
       setIsStreaming(true);
@@ -206,6 +170,34 @@ export default function Home() {
 
     ws.onmessage = (event) => {
       const rawData = typeof event.data === "string" ? event.data : String(event.data);
+      let parsedData: unknown = null;
+      try {
+        parsedData = JSON.parse(rawData);
+      } catch {
+        parsedData = null;
+      }
+
+      const messageType =
+        typeof parsedData === "object" &&
+        parsedData !== null &&
+        "type" in parsedData &&
+        typeof (parsedData as { type: unknown }).type === "string"
+          ? (parsedData as { type: string }).type
+          : undefined;
+
+      if (messageType === "debug") {
+        const debugPayload =
+          typeof parsedData === "object" &&
+          parsedData !== null &&
+          "data" in parsedData
+            ? (parsedData as { data: unknown }).data
+            : parsedData;
+        const debugMessage = parseDebugMessage(debugPayload, rawData);
+        setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: debugMessage }]);
+        setIsStreaming(false);
+        return;
+      }
+
       const formattedData = formatJsonIfPossible(rawData);
       setIsStreaming(false);
       setMessages((prev) =>
