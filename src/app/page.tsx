@@ -24,6 +24,21 @@ interface DebugEntry {
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
 
+const normalizeDebugLevel = (value: unknown): DebugMessage["level"] => {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.toLowerCase();
+  if (
+    normalized === "debug" ||
+    normalized === "info" ||
+    normalized === "warning" ||
+    normalized === "error"
+  ) {
+    return normalized;
+  }
+  if (normalized === "warn") return "warning";
+  return undefined;
+};
+
 const formatJsonIfPossible = (content: string) => {
   try {
     return JSON.stringify(JSON.parse(content), null, 2);
@@ -45,13 +60,7 @@ const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessag
       request_id: typeof data.request_id === "string" ? data.request_id : undefined,
       message: data.message as string,
       source: typeof data.source === "string" ? data.source : undefined,
-      level:
-        data.level === "debug" ||
-        data.level === "info" ||
-        data.level === "warning" ||
-        data.level === "error"
-          ? data.level
-          : undefined,
+      level: normalizeDebugLevel(data.level),
       payload:
         data.payload && typeof data.payload === "object"
           ? (data.payload as Record<string, unknown>)
@@ -60,6 +69,20 @@ const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessag
   }
 
   return { message: fallbackMessage };
+};
+
+const getDebugLevelColor = (level?: DebugMessage["level"]) => {
+  switch (level) {
+    case "debug":
+      return "#9ca3af";
+    case "warning":
+      return "#facc15";
+    case "error":
+      return "#ef4444";
+    case "info":
+    default:
+      return undefined;
+  }
 };
 
 export default function Home() {
@@ -170,6 +193,7 @@ export default function Home() {
 
     ws.onmessage = (event) => {
       const rawData = typeof event.data === "string" ? event.data : String(event.data);
+      console.log("Itinerary websocket message:", rawData);
       let parsedData: unknown = null;
       try {
         parsedData = JSON.parse(rawData);
@@ -186,13 +210,20 @@ export default function Home() {
           : undefined;
 
       if (messageType === "debug") {
-        const debugPayload =
+        const rawDebugPayload =
           typeof parsedData === "object" &&
           parsedData !== null &&
           "data" in parsedData
             ? (parsedData as { data: unknown }).data
             : parsedData;
-        const debugMessage = parseDebugMessage(debugPayload, rawData);
+        const mergedDebugPayload =
+          typeof parsedData === "object" &&
+          parsedData !== null &&
+          typeof rawDebugPayload === "object" &&
+          rawDebugPayload !== null
+            ? { ...(parsedData as Record<string, unknown>), ...(rawDebugPayload as Record<string, unknown>) }
+            : rawDebugPayload;
+        const debugMessage = parseDebugMessage(mergedDebugPayload, rawData);
         setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: debugMessage }]);
         setIsStreaming(false);
         return;
@@ -346,18 +377,24 @@ export default function Home() {
             ) : (
               debugMessages.map((entry) => {
                 const correlationId = entry.data.id ?? entry.data.request_id;
+                const messageColor = getDebugLevelColor(entry.data.level);
                 return (
-                  <div key={entry.id} className="mb-4 rounded-xl border border-border bg-surface p-3">
-                    <p className="whitespace-pre-wrap text-sm text-foreground">{entry.data.message}</p>
+                  <div
+                    key={entry.id}
+                    className="mb-4 rounded-xl border border-border bg-surface p-3"
+                  >
+                    <p className="whitespace-pre-wrap text-sm" style={{ color: messageColor }}>
+                      {entry.data.message}
+                    </p>
                     {(entry.data.level || entry.data.source || correlationId) && (
-                      <p className="mt-2 text-xs text-muted">
+                      <p className="mt-2 text-xs opacity-80">
                         {[entry.data.level, entry.data.source, correlationId]
                           .filter(Boolean)
                           .join(" • ")}
                       </p>
                     )}
                     {entry.data.payload && (
-                      <pre className="mt-2 whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
+                      <pre className="mt-2 whitespace-pre-wrap rounded-md bg-black/5 p-2 text-xs">
                         {JSON.stringify(entry.data.payload, null, 2)}
                       </pre>
                     )}
