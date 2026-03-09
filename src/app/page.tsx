@@ -26,6 +26,7 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const debugWsRef = useRef<WebSocket | null>(null);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -43,6 +44,10 @@ export default function Home() {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
+      }
+      if (debugWsRef.current) {
+        debugWsRef.current.close();
+        debugWsRef.current = null;
       }
     };
   }, []);
@@ -74,6 +79,27 @@ export default function Home() {
     const wsUrl = `${INGRESS_API}/api/v1/itinerary`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
+
+    // Establish debug WebSocket connection
+    if (debugWsRef.current) {
+      debugWsRef.current.close();
+      debugWsRef.current = null;
+    }
+    const debugWsUrl = `${INGRESS_API}/api/v1/debug`;
+    const debugWs = new WebSocket(debugWsUrl);
+    debugWsRef.current = debugWs;
+
+    debugWs.onmessage = (event) => {
+      console.log("Debug websocket message:", event.data);
+    };
+
+    debugWs.onerror = () => {
+      console.error("Debug websocket connection error.");
+    };
+
+    debugWs.onclose = () => {
+      debugWsRef.current = null;
+    };
 
     ws.onopen = () => {
       setIsConnecting(false);
