@@ -10,6 +10,14 @@ interface Message {
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
 
+const formatJsonIfPossible = (content: string) => {
+  try {
+    return JSON.stringify(JSON.parse(content), null, 2);
+  } catch {
+    return content;
+  }
+};
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -70,16 +78,27 @@ export default function Home() {
     ws.onopen = () => {
       setIsConnecting(false);
       setIsStreaming(true);
-      // Send the prompt
-      ws.send(JSON.stringify({ prompt }));
+      // Send request payload matching backend ItineraryRequest schema
+      ws.send(
+        JSON.stringify({
+          id: null,
+          prompt_id: null,
+          content: prompt,
+        })
+      );
     };
 
     ws.onmessage = (event) => {
-      const data = event.data;
+      const rawData = typeof event.data === "string" ? event.data : String(event.data);
+      const formattedData = formatJsonIfPossible(rawData);
+      setIsStreaming(false);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? { ...msg, content: msg.content + data }
+            ? {
+                ...msg,
+                content: msg.content ? `${msg.content}\n\n${formattedData}` : formattedData,
+              }
             : msg
         )
       );
