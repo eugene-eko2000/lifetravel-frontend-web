@@ -8,6 +8,20 @@ interface Message {
   content: string;
 }
 
+interface DebugMessage {
+  id?: string;
+  request_id?: string;
+  message: string;
+  source?: string;
+  level?: "debug" | "info" | "warning" | "error";
+  payload?: Record<string, unknown>;
+}
+
+interface DebugEntry {
+  id: string;
+  data: DebugMessage;
+}
+
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
 
 const formatJsonIfPossible = (content: string) => {
@@ -18,20 +32,67 @@ const formatJsonIfPossible = (content: string) => {
   }
 };
 
+const parseDebugMessage = (rawData: string): DebugMessage => {
+  try {
+    const parsed = JSON.parse(rawData) as unknown;
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      "message" in parsed &&
+      typeof (parsed as { message: unknown }).message === "string"
+    ) {
+      const value = parsed as Partial<DebugMessage>;
+      return {
+        id: typeof value.id === "string" ? value.id : undefined,
+        request_id: typeof value.request_id === "string" ? value.request_id : undefined,
+        message: value.message as string,
+        source: typeof value.source === "string" ? value.source : undefined,
+        level:
+          value.level === "debug" ||
+          value.level === "info" ||
+          value.level === "warning" ||
+          value.level === "error"
+            ? value.level
+            : undefined,
+        payload:
+          value.payload && typeof value.payload === "object"
+            ? (value.payload as Record<string, unknown>)
+            : undefined,
+      };
+    }
+  } catch {
+    // Fallback to raw text if message is not JSON
+  }
+
+  return {
+    message: rawData,
+  };
+};
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [debugMessages, setDebugMessages] = useState<DebugEntry[]>([]);
   const [input, setInput] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const debugMessagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const debugWsRef = useRef<WebSocket | null>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const isResizingRef = useRef(false);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Auto-scroll debug pane
+  useEffect(() => {
+    debugMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [debugMessages]);
 
   // Focus textarea on mount
   useEffect(() => {
@@ -49,6 +110,32 @@ export default function Home() {
         debugWsRef.current.close();
         debugWsRef.current = null;
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isResizingRef.current || !splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      if (!rect.width) return;
+      const nextPercent = ((event.clientX - rect.left) / rect.width) * 100;
+      const clampedPercent = Math.min(80, Math.max(25, nextPercent));
+      setLeftPaneWidthPercent(clampedPercent);
+    };
+
+    const handleMouseUp = () => {
+      if (!isResizingRef.current) return;
+      isResizingRef.current = false;
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
     };
   }, []);
 
@@ -90,7 +177,10 @@ export default function Home() {
     debugWsRef.current = debugWs;
 
     debugWs.onmessage = (event) => {
-      console.log("Debug websocket message:", event.data);
+      const rawData = typeof event.data === "string" ? event.data : String(event.data);
+      const parsed = parseDebugMessage(rawData);
+      console.log("Debug websocket message:", parsed);
+      setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: parsed }]);
     };
 
     debugWs.onerror = () => {
@@ -162,6 +252,12 @@ export default function Home() {
     }
   };
 
+  const handleDividerMouseDown = () => {
+    isResizingRef.current = true;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+  };
+
   return (
     <div className="flex h-dvh flex-col bg-background">
       {/* Header */}
@@ -170,65 +266,116 @@ export default function Home() {
       </header>
 
       {/* Messages Area */}
-      <main className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={1.5}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-8 w-8 text-muted"
-              >
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-              </svg>
-            </div>
-            <p className="text-center text-lg text-muted">
-              How can I help you today?
-            </p>
+      <main ref={splitContainerRef} className="flex min-h-0 flex-1 overflow-hidden">
+        <section
+          className="flex min-h-0 flex-col border-r border-border"
+          style={{ width: `${leftPaneWidthPercent}%` }}
+        >
+          <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
+            Itinerary
           </div>
-        ) : (
-          <div className="mx-auto max-w-3xl px-4 py-6">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`mb-6 flex ${
-                  message.role === "user" ? "justify-end" : "justify-start"
-                }`}
-              >
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                    message.role === "user"
-                      ? "bg-user-bubble text-foreground"
-                      : "bg-assistant-bubble text-foreground"
-                  }`}
-                >
-                  {message.role === "assistant" && (
-                    <div className="mb-1 flex items-center gap-2">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
-                        AI
-                      </div>
-                      <span className="text-xs font-medium text-muted">Assistant</span>
-                    </div>
-                  )}
-                  <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                    {message.content}
-                    {message.role === "assistant" &&
-                      !message.content &&
-                      (isConnecting || isStreaming) && (
-                        <span className="inline-block animate-pulse">▊</span>
-                      )}
-                  </div>
+          <div className="flex-1 overflow-y-auto">
+            {messages.length === 0 ? (
+              <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-8 w-8 text-muted"
+                  >
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
                 </div>
+                <p className="text-center text-lg text-muted">
+                  How can I help you today?
+                </p>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
+            ) : (
+              <div className="px-4 py-6">
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`mb-6 flex ${
+                      message.role === "user" ? "justify-end" : "justify-start"
+                    }`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                        message.role === "user"
+                          ? "bg-user-bubble text-foreground"
+                          : "bg-assistant-bubble text-foreground"
+                      }`}
+                    >
+                      {message.role === "assistant" && (
+                        <div className="mb-1 flex items-center gap-2">
+                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
+                            AI
+                          </div>
+                          <span className="text-xs font-medium text-muted">Assistant</span>
+                        </div>
+                      )}
+                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                        {message.content}
+                        {message.role === "assistant" &&
+                          !message.content &&
+                          (isConnecting || isStreaming) && (
+                            <span className="inline-block animate-pulse">▊</span>
+                          )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            )}
           </div>
-        )}
+        </section>
+
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panes"
+          className="w-1 cursor-col-resize bg-border transition-colors hover:bg-muted"
+          onMouseDown={handleDividerMouseDown}
+        />
+
+        <section className="flex min-h-0 min-w-[280px] flex-1 flex-col">
+          <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
+            Debug
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 py-6">
+            {debugMessages.length === 0 ? (
+              <p className="text-sm text-muted">Waiting for debug messages...</p>
+            ) : (
+              debugMessages.map((entry) => {
+                const correlationId = entry.data.id ?? entry.data.request_id;
+                return (
+                  <div key={entry.id} className="mb-4 rounded-xl border border-border bg-surface p-3">
+                    <p className="whitespace-pre-wrap text-sm text-foreground">{entry.data.message}</p>
+                    {(entry.data.level || entry.data.source || correlationId) && (
+                      <p className="mt-2 text-xs text-muted">
+                        {[entry.data.level, entry.data.source, correlationId]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </p>
+                    )}
+                    {entry.data.payload && (
+                      <pre className="mt-2 whitespace-pre-wrap rounded-md bg-background p-2 text-xs text-foreground">
+                        {JSON.stringify(entry.data.payload, null, 2)}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })
+            )}
+            <div ref={debugMessagesEndRef} />
+          </div>
+        </section>
       </main>
 
       {/* Input Area */}
