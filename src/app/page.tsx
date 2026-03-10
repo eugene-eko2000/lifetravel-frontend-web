@@ -47,7 +47,11 @@ const formatJsonIfPossible = (content: string) => {
   }
 };
 
-const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessage => {
+const parseDebugMessage = (
+  value: unknown,
+  fallbackMessage: string,
+  fallbackId?: string
+): DebugMessage => {
   if (
     typeof value === "object" &&
     value !== null &&
@@ -56,7 +60,7 @@ const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessag
   ) {
     const data = value as Partial<DebugMessage>;
     return {
-      id: typeof data.id === "string" ? data.id : undefined,
+      id: typeof data.id === "string" ? data.id : fallbackId,
       request_id: typeof data.request_id === "string" ? data.request_id : undefined,
       message: data.message as string,
       source: typeof data.source === "string" ? data.source : undefined,
@@ -68,7 +72,11 @@ const parseDebugMessage = (value: unknown, fallbackMessage: string): DebugMessag
     };
   }
 
-  return { message: fallbackMessage };
+  if (typeof value === "string") {
+    return { id: fallbackId, message: value };
+  }
+
+  return { id: fallbackId, message: fallbackMessage };
 };
 
 const getDebugLevelColor = (level?: DebugMessage["level"]) => {
@@ -154,6 +162,10 @@ export default function Home() {
     const prompt = input.trim();
     if (!prompt || isConnecting || isStreaming) return;
 
+    // Start each request with fresh panels
+    setMessages([]);
+    setDebugMessages([]);
+
     // Add user message
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -210,20 +222,24 @@ export default function Home() {
           : undefined;
 
       if (messageType === "debug") {
+        const debugEnvelope =
+          typeof parsedData === "object" && parsedData !== null
+            ? (parsedData as Record<string, unknown>)
+            : null;
+        const envelopeId = typeof debugEnvelope?.id === "string" ? debugEnvelope.id : undefined;
         const rawDebugPayload =
           typeof parsedData === "object" &&
           parsedData !== null &&
-          "data" in parsedData
-            ? (parsedData as { data: unknown }).data
+          "debug_message" in parsedData
+            ? (parsedData as { debug_message: unknown }).debug_message
             : parsedData;
         const mergedDebugPayload =
-          typeof parsedData === "object" &&
-          parsedData !== null &&
+          debugEnvelope !== null &&
           typeof rawDebugPayload === "object" &&
           rawDebugPayload !== null
-            ? { ...(parsedData as Record<string, unknown>), ...(rawDebugPayload as Record<string, unknown>) }
+            ? { ...debugEnvelope, ...(rawDebugPayload as Record<string, unknown>) }
             : rawDebugPayload;
-        const debugMessage = parseDebugMessage(mergedDebugPayload, rawData);
+        const debugMessage = parseDebugMessage(mergedDebugPayload, rawData, envelopeId);
         setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: debugMessage }]);
         setIsStreaming(false);
         return;
