@@ -105,6 +105,15 @@ export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
+  const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
+
+  const copyJsonToClipboard = useCallback((data: unknown, blockKey: string) => {
+    const text = JSON.stringify(data, null, 2);
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedBlockKey(blockKey);
+      setTimeout(() => setCopiedBlockKey(null), 2000);
+    });
+  }, []);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
@@ -374,9 +383,22 @@ export default function Home() {
                               block.type === "json" ? (
                                 <div
                                   key={i}
-                                  className="rounded-lg border border-border bg-background/50 p-3 overflow-x-auto"
+                                  className="rounded-lg border border-border bg-background/50 overflow-x-auto"
                                 >
-                                  <JsonViewer data={block.data} defaultExpanded={true} />
+                                  <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        copyJsonToClipboard(block.data, `${message.id}-${i}`)
+                                      }
+                                      className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+                                    >
+                                      {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
+                                    </button>
+                                  </div>
+                                  <div className="p-3">
+                                    <JsonViewer data={block.data} defaultExpanded={true} />
+                                  </div>
                                 </div>
                               ) : (
                                 <pre
