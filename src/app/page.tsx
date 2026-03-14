@@ -1,11 +1,18 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, type FormEvent, type KeyboardEvent } from "react";
+import { JsonViewer } from "@/components/JsonViewer";
+
+type ItineraryBlock =
+  | { type: "json"; data: unknown }
+  | { type: "text"; data: string };
 
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Assistant-only: each websocket payload as a block (JSON or plain text) */
+  blocks?: ItineraryBlock[];
 }
 
 interface DebugMessage {
@@ -37,14 +44,6 @@ const normalizeDebugLevel = (value: unknown): DebugMessage["level"] => {
   }
   if (normalized === "warn") return "warning";
   return undefined;
-};
-
-const formatJsonIfPossible = (content: string) => {
-  try {
-    return JSON.stringify(JSON.parse(content), null, 2);
-  } catch {
-    return content;
-  }
 };
 
 const parseDebugMessage = (
@@ -182,6 +181,7 @@ export default function Home() {
       id: assistantMessageId,
       role: "assistant",
       content: "",
+      blocks: [],
     };
     setMessages((prev) => [...prev, assistantMessage]);
 
@@ -245,15 +245,15 @@ export default function Home() {
         return;
       }
 
-      const formattedData = formatJsonIfPossible(rawData);
+      const newBlock: ItineraryBlock =
+        parsedData !== null
+          ? { type: "json", data: parsedData }
+          : { type: "text", data: rawData };
       setIsStreaming(false);
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? {
-                ...msg,
-                content: msg.content ? `${msg.content}\n\n${formattedData}` : formattedData,
-              }
+            ? { ...msg, blocks: [...(msg.blocks ?? []), newBlock] }
             : msg
         )
       );
@@ -265,7 +265,13 @@ export default function Home() {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? { ...msg, content: msg.content || "⚠️ Connection error. Please try again." }
+            ? {
+                ...msg,
+                blocks: [
+                  ...(msg.blocks ?? []),
+                  { type: "text" as const, data: "⚠️ Connection error. Please try again." },
+                ],
+              }
             : msg
         )
       );
@@ -358,12 +364,44 @@ export default function Home() {
                           <span className="text-xs font-medium text-muted">Assistant</span>
                         </div>
                       )}
-                      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {message.content}
+                      <div className="text-sm leading-relaxed space-y-3">
+                        {message.role === "user" && (
+                          <span className="whitespace-pre-wrap">{message.content}</span>
+                        )}
+                        {message.role === "assistant" && message.blocks && message.blocks.length > 0 && (
+                          <>
+                            {message.blocks.map((block, i) =>
+                              block.type === "json" ? (
+                                <div
+                                  key={i}
+                                  className="rounded-lg border border-border bg-background/50 p-3 overflow-x-auto"
+                                >
+                                  <JsonViewer data={block.data} defaultExpanded={true} />
+                                </div>
+                              ) : (
+                                <pre
+                                  key={i}
+                                  className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
+                                >
+                                  {block.data}
+                                </pre>
+                              )
+                            )}
+                            {(isConnecting || isStreaming) && (
+                              <span className="inline-block animate-pulse">▊</span>
+                            )}
+                          </>
+                        )}
                         {message.role === "assistant" &&
-                          !message.content &&
-                          (isConnecting || isStreaming) && (
-                            <span className="inline-block animate-pulse">▊</span>
+                          (!message.blocks || message.blocks.length === 0) && (
+                            <>
+                              {message.content && (
+                                <span className="whitespace-pre-wrap">{message.content}</span>
+                              )}
+                              {(isConnecting || isStreaming) && (
+                                <span className="inline-block animate-pulse">▊</span>
+                              )}
+                            </>
                           )}
                       </div>
                     </div>
