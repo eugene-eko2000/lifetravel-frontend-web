@@ -124,12 +124,20 @@ export default function Home() {
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
 
   const copyJsonToClipboard = useCallback((data: unknown, blockKey: string) => {
     const text = JSON.stringify(data, null, 2);
     void navigator.clipboard.writeText(text).then(() => {
       setCopiedBlockKey(blockKey);
       setTimeout(() => setCopiedBlockKey(null), 2000);
+    });
+  }, []);
+
+  const copyPromptToClipboard = useCallback((text: string, promptId: string) => {
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopiedPromptId(promptId);
+      setTimeout(() => setCopiedPromptId(null), 2000);
     });
   }, []);
 
@@ -415,7 +423,18 @@ export default function Home() {
                       )}
                       <div className="text-sm leading-relaxed space-y-3">
                         {message.role === "user" && (
-                          <span className="whitespace-pre-wrap">{message.content}</span>
+                          <div>
+                            <div className="mb-1 flex items-center justify-end">
+                              <button
+                                type="button"
+                                onClick={() => copyPromptToClipboard(message.content, message.id)}
+                                className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+                              >
+                                {copiedPromptId === message.id ? "Copied!" : "Copy"}
+                              </button>
+                            </div>
+                            <span className="whitespace-pre-wrap">{message.content}</span>
+                          </div>
                         )}
                         {message.role === "assistant" && message.blocks && message.blocks.length > 0 && (
                           <>
