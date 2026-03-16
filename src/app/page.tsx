@@ -13,6 +13,8 @@ interface Message {
   content: string;
   /** Assistant-only: each websocket payload as a block (JSON or plain text) */
   blocks?: ItineraryBlock[];
+  /** Assistant-only: latest status text for current request */
+  statusText?: string;
 }
 
 interface DebugMessage {
@@ -27,6 +29,11 @@ interface DebugMessage {
 interface DebugEntry {
   id: string;
   data: DebugMessage;
+}
+
+interface StatusMessage {
+  id: string;
+  message: string;
 }
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
@@ -90,6 +97,17 @@ const getDebugLevelColor = (level?: DebugMessage["level"]) => {
     default:
       return undefined;
   }
+};
+
+const isStatusMessage = (value: unknown): value is StatusMessage => {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "id" in value &&
+    "message" in value &&
+    typeof (value as { id: unknown }).id === "string" &&
+    typeof (value as { message: unknown }).message === "string"
+  );
 };
 
 export default function Home() {
@@ -191,6 +209,7 @@ export default function Home() {
       role: "assistant",
       content: "",
       blocks: [],
+      statusText: undefined,
     };
     setMessages((prev) => [...prev, assistantMessage]);
 
@@ -254,6 +273,23 @@ export default function Home() {
         return;
       }
 
+      const isTypedStatus = messageType === "status";
+      if (isTypedStatus || isStatusMessage(parsedData)) {
+        const statusMessage = parsedData as StatusMessage;
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  statusText: statusMessage.message,
+                }
+              : msg
+          )
+        );
+        setIsStreaming(false);
+        return;
+      }
+
       const newBlock: ItineraryBlock =
         parsedData !== null
           ? { type: "json", data: parsedData }
@@ -262,7 +298,11 @@ export default function Home() {
       setMessages((prev) =>
         prev.map((msg) =>
           msg.id === assistantMessageId
-            ? { ...msg, blocks: [...(msg.blocks ?? []), newBlock] }
+            ? {
+                ...msg,
+                blocks: [...(msg.blocks ?? []), newBlock],
+                statusText: undefined,
+              }
             : msg
         )
       );
@@ -425,6 +465,11 @@ export default function Home() {
                               )}
                             </>
                           )}
+                        {message.role === "assistant" && message.statusText && (
+                          <div className="rounded-lg border border-border bg-background/50 p-3 text-xs text-muted">
+                            {message.statusText}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
