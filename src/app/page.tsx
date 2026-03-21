@@ -99,6 +99,9 @@ const getDebugLevelColor = (level?: DebugMessage["level"]) => {
   }
 };
 
+/** If the user is within this many px of the bottom, treat as "following" new messages. */
+const DEBUG_SCROLL_BOTTOM_THRESHOLD_PX = 80;
+
 const isStatusMessage = (value: unknown): value is StatusMessage => {
   return (
     typeof value === "object" &&
@@ -118,7 +121,7 @@ export default function Home() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const debugMessagesEndRef = useRef<HTMLDivElement>(null);
+  const debugPanelScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
@@ -146,9 +149,15 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-scroll debug pane
+  // Auto-scroll debug pane only when the user is already near the bottom (not reading older lines)
   useEffect(() => {
-    debugMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = debugPanelScrollRef.current;
+    if (!el || debugMessages.length === 0) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    if (distanceFromBottom <= DEBUG_SCROLL_BOTTOM_THRESHOLD_PX) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
   }, [debugMessages]);
 
   // Focus textarea on mount
@@ -511,7 +520,7 @@ export default function Home() {
           <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
             Debug
           </div>
-          <div className="flex-1 overflow-y-auto px-4 py-6">
+          <div ref={debugPanelScrollRef} className="flex-1 overflow-y-auto px-4 py-6">
             {debugMessages.length === 0 ? (
               <p className="text-sm text-muted">Waiting for debug messages...</p>
             ) : (
@@ -545,7 +554,6 @@ export default function Home() {
                 );
               })
             )}
-            <div ref={debugMessagesEndRef} />
           </div>
         </section>
       </main>
