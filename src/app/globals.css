@@ -56,3 +56,32 @@ body {
 textarea {
   field-sizing: content;
 }
+
+/* Animated red–blue gradient for itinerary status line */
+@keyframes status-gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.status-message-gradient {
+  background: linear-gradient(
+    90deg,
+    #b91c1c,
+    #1d4ed8,
+    #dc2626,
+    #2563eb,
+    #7f1d1d,
+    #1e40af
+  );
+  background-size: 300% 100%;
+  animation: status-gradient-shift 6s ease-in-out infinite;
+  color: #f8fafc;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+}

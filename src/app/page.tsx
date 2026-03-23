@@ -494,7 +494,7 @@ export default function Home() {
                             </>
                           )}
                         {message.role === "assistant" && message.statusText && (
-                          <div className="rounded-lg border border-border bg-background/50 p-3 text-xs text-muted">
+                          <div className="status-message-gradient rounded-lg border border-white/20 p-3 text-xs">
                             {message.statusText}
                           </div>
                         )}
