@@ -422,14 +422,6 @@ export default function Home() {
                           : "bg-assistant-bubble text-foreground"
                       }`}
                     >
-                      {message.role === "assistant" && (
-                        <div className="mb-1 flex items-center gap-2">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-accent text-xs font-bold text-white">
-                            AI
-                          </div>
-                          <span className="text-xs font-medium text-muted">Assistant</span>
-                        </div>
-                      )}
                       <div className="text-sm leading-relaxed space-y-3">
                         {message.role === "user" && (
                           <div>
@@ -494,8 +486,15 @@ export default function Home() {
                             </>
                           )}
                         {message.role === "assistant" && message.statusText && (
-                          <div className="status-message-gradient rounded-lg border border-white/20 p-3 text-xs">
-                            {message.statusText}
+                          <div className="rounded-lg border border-border bg-background/50 p-3 text-xs">
+                            <div className="flex items-center gap-2">
+                              <img
+                                src="/status-send-icon.svg"
+                                alt=""
+                                className="h-5 w-5 shrink-0"
+                              />
+                              <span className="text-foreground">{message.statusText}</span>
+                            </div>
                           </div>
                         )}
                       </div>
