@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, type FormEvent, type KeyboardEvent } from "react";
 import { JsonViewer } from "@/components/JsonViewer";
+import { ItineraryCard, looksLikeItinerary } from "@/components/ItineraryCard";
 
 type ItineraryBlock =
   | { type: "json"; data: unknown }
@@ -457,7 +458,11 @@ export default function Home() {
                                     </button>
                                   </div>
                                   <div className="p-3">
-                                    <JsonViewer data={block.data} defaultExpanded={true} />
+                                    {looksLikeItinerary(block.data) ? (
+                                      <ItineraryCard data={block.data} />
+                                    ) : (
+                                      <JsonViewer data={block.data} defaultExpanded={true} />
+                                    )}
                                   </div>
                                 </div>
                               ) : (
