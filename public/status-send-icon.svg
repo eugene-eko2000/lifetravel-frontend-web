@@ -1,14 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 123.328 123.328">
   <defs>
-    <linearGradient id="statusGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient
+      id="statusGradient"
+      gradientUnits="userSpaceOnUse"
+      x1="0"
+      y1="0"
+      x2="123.328"
+      y2="123.328"
+    >
       <stop offset="0%" stop-color="#ef4444" />
       <stop offset="50%" stop-color="#3b82f6" />
       <stop offset="100%" stop-color="#ef4444" />
       <animateTransform
         attributeName="gradientTransform"
         type="translate"
-        from="-1 -1"
-        to="1 1"
+        from="-123.328 -123.328"
+        to="123.328 123.328"
         dur="1.6s"
         repeatCount="indefinite"
       />
