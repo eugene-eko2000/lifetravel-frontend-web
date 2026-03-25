@@ -121,6 +121,8 @@ export default function Home() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
+  const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(true);
+  const lastLeftPaneWidthPercentRef = useRef(leftPaneWidthPercent);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const debugPanelScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -365,23 +367,44 @@ export default function Home() {
   };
 
   const handleDividerMouseDown = () => {
+    if (!isDebugPanelOpen) return;
     isResizingRef.current = true;
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
   };
 
+  const toggleDebugPanel = () => {
+    setIsDebugPanelOpen((prev) => {
+      if (prev) {
+        lastLeftPaneWidthPercentRef.current = leftPaneWidthPercent;
+        return false;
+      }
+      setLeftPaneWidthPercent(lastLeftPaneWidthPercentRef.current || 65);
+      return true;
+    });
+  };
+
   return (
     <div className="flex h-dvh flex-col bg-background">
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-center border-b border-border px-4 py-3">
+      <header className="flex shrink-0 items-center justify-center border-b border-border px-4 py-3 relative">
         <h1 className="text-lg font-semibold text-foreground">LifeTravel Chat</h1>
+        <div className="absolute right-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleDebugPanel}
+            className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-hover transition-colors"
+          >
+            {isDebugPanelOpen ? "Hide debug" : "Show debug"}
+          </button>
+        </div>
       </header>
 
       {/* Messages Area */}
       <main ref={splitContainerRef} className="flex min-h-0 flex-1 overflow-hidden">
         <section
-          className="flex min-h-0 flex-col border-r border-border"
-          style={{ width: `${leftPaneWidthPercent}%` }}
+          className={`flex min-h-0 flex-col ${isDebugPanelOpen ? "border-r border-border" : ""}`}
+          style={{ width: isDebugPanelOpen ? `${leftPaneWidthPercent}%` : "100%" }}
         >
           <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
             Itinerary
@@ -512,54 +535,58 @@ export default function Home() {
           </div>
         </section>
 
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize panes"
-          className="w-1 cursor-col-resize bg-border transition-colors hover:bg-muted"
-          onMouseDown={handleDividerMouseDown}
-        />
+        {isDebugPanelOpen && (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize panes"
+              className="w-1 cursor-col-resize bg-border transition-colors hover:bg-muted"
+              onMouseDown={handleDividerMouseDown}
+            />
 
-        <section className="flex min-h-0 min-w-[280px] flex-1 flex-col">
-          <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
-            Debug
-          </div>
-          <div ref={debugPanelScrollRef} className="flex-1 overflow-y-auto px-4 py-6">
-            {debugMessages.length === 0 ? (
-              <p className="text-sm text-muted">Waiting for debug messages...</p>
-            ) : (
-              debugMessages.map((entry) => {
-                const correlationId = entry.data.id ?? entry.data.request_id;
-                const messageColor = getDebugLevelColor(entry.data.level);
-                return (
-                  <div
-                    key={entry.id}
-                    className="mb-4 rounded-xl border border-border bg-surface p-3"
-                  >
-                    <p className="whitespace-pre-wrap text-sm" style={{ color: messageColor }}>
-                      {entry.data.message}
-                    </p>
-                    {(entry.data.level || entry.data.source || correlationId) && (
-                      <p className="mt-2 text-xs opacity-80">
-                        {[entry.data.level, entry.data.source, correlationId]
-                          .filter(Boolean)
-                          .join(" • ")}
-                      </p>
-                    )}
-                    {entry.data.payload && (
-                      <pre
-                        className="mt-2 whitespace-pre-wrap rounded-md bg-black/5 p-2 text-xs"
-                        style={{ color: messageColor }}
+            <section className="flex min-h-0 min-w-[280px] flex-1 flex-col">
+              <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
+                Debug
+              </div>
+              <div ref={debugPanelScrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+                {debugMessages.length === 0 ? (
+                  <p className="text-sm text-muted">Waiting for debug messages...</p>
+                ) : (
+                  debugMessages.map((entry) => {
+                    const correlationId = entry.data.id ?? entry.data.request_id;
+                    const messageColor = getDebugLevelColor(entry.data.level);
+                    return (
+                      <div
+                        key={entry.id}
+                        className="mb-4 rounded-xl border border-border bg-surface p-3"
                       >
-                        {JSON.stringify(entry.data.payload, null, 2)}
-                      </pre>
-                    )}
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </section>
+                        <p className="whitespace-pre-wrap text-sm" style={{ color: messageColor }}>
+                          {entry.data.message}
+                        </p>
+                        {(entry.data.level || entry.data.source || correlationId) && (
+                          <p className="mt-2 text-xs opacity-80">
+                            {[entry.data.level, entry.data.source, correlationId]
+                              .filter(Boolean)
+                              .join(" • ")}
+                          </p>
+                        )}
+                        {entry.data.payload && (
+                          <pre
+                            className="mt-2 whitespace-pre-wrap rounded-md bg-black/5 p-2 text-xs"
+                            style={{ color: messageColor }}
+                          >
+                            {JSON.stringify(entry.data.payload, null, 2)}
+                          </pre>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+          </>
+        )}
       </main>
 
       {/* Input Area */}
