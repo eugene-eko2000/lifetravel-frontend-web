@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, type ReactNode } from "react";
+
 type UnknownRecord = Record<string, unknown>;
 
 function isObject(value: unknown): value is UnknownRecord {
@@ -79,7 +81,51 @@ function bestByRankingScore(options: unknown[]): UnknownRecord | undefined {
     .sort((a, b) => b.score - a.score)[0]?.o;
 }
 
+function ExpandableSection({
+  isExpanded,
+  onToggle,
+  collapsedMaxHeightClass,
+  children,
+}: {
+  isExpanded: boolean;
+  onToggle: () => void;
+  collapsedMaxHeightClass: string;
+  children: ReactNode;
+}) {
+  const heightTransitionClass = isExpanded
+    ? "duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
+    : "duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]";
+
+  return (
+    <div>
+      <div
+        className={`relative overflow-hidden transition-[max-height] ${heightTransitionClass} ${
+          isExpanded ? "max-h-[4000px]" : collapsedMaxHeightClass
+        }`}
+      >
+        <div className="space-y-2">{children}</div>
+        <div
+          className={`pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface via-surface/85 to-transparent backdrop-blur-[1px] transition-opacity ${
+            isExpanded ? "opacity-0 duration-250" : "opacity-100 duration-500"
+          }`}
+        />
+      </div>
+      <div className="mt-2 flex justify-end">
+        <button
+          type="button"
+          onClick={onToggle}
+          className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+        >
+          {isExpanded ? "Show less..." : "Show more..."}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ranked: UnknownRecord }) {
+  const [showAllFlights, setShowAllFlights] = useState(false);
+  const [showAllHotels, setShowAllHotels] = useState(false);
   const itineraryIndex = pickNumber(envelope, ["itinerary_index"]);
   const itineraryCount = pickNumber(envelope, ["itinerary_count"]);
 
@@ -132,81 +178,168 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
       {flights.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-medium text-muted">Flights</p>
-          <div className="mt-2 space-y-2">
-            {flights.slice(0, 5).map((f, idx) => {
-              const flight = isObject(f) ? f : undefined;
-              if (!flight) return null;
-              const from = pickString(flight, ["from"]);
-              const to = pickString(flight, ["to"]);
-              const depart = asIsoDate(flight.depart_date);
-              const arrive = asIsoDate(flight.arrive_date);
-              const options = pickArray(flight, ["options"]) ?? [];
-              const best = bestByRankingScore(options);
-              const price = best && isObject(best.price) ? (best.price as UnknownRecord) : undefined;
-              const currency = price ? pickString(price, ["currency"]) : undefined;
-              const total = price ? pickString(price, ["total", "grandTotal"]) : undefined;
-              const durationMinutes =
-                best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"]) : undefined;
-              const stops =
-                best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["stops"]) : undefined;
+          {flights.length > 3 ? (
+            <div className="mt-2">
+              <ExpandableSection
+                isExpanded={showAllFlights}
+                onToggle={() => setShowAllFlights((prev) => !prev)}
+                collapsedMaxHeightClass="max-h-[300px]"
+              >
+                {flights.map((f, idx) => {
+                  const flight = isObject(f) ? f : undefined;
+                  if (!flight) return null;
+                  const from = pickString(flight, ["from"]);
+                  const to = pickString(flight, ["to"]);
+                  const depart = asIsoDate(flight.depart_date);
+                  const arrive = asIsoDate(flight.arrive_date);
+                  const options = pickArray(flight, ["options"]) ?? [];
+                  const best = bestByRankingScore(options);
+                  const price = best && isObject(best.price) ? (best.price as UnknownRecord) : undefined;
+                  const currency = price ? pickString(price, ["currency"]) : undefined;
+                  const total = price ? pickString(price, ["total", "grandTotal"]) : undefined;
+                  const durationMinutes =
+                    best && isObject(best._ranking)
+                      ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"])
+                      : undefined;
+                  const stops =
+                    best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["stops"]) : undefined;
 
-              return (
-                <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">
-                      {[from, to].filter(Boolean).join(" → ") || `Flight ${idx + 1}`}
-                    </p>
-                    <p className="text-xs text-muted">{[depart, arrive].filter(Boolean).join(" → ")}</p>
+                  return (
+                    <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">
+                          {[from, to].filter(Boolean).join(" → ") || `Flight ${idx + 1}`}
+                        </p>
+                        <p className="text-xs text-muted">{[depart, arrive].filter(Boolean).join(" → ")}</p>
+                      </div>
+                      {(currency || total || durationMinutes != null || stops != null) && (
+                        <p className="mt-1 text-xs text-muted">
+                          {[
+                            currency && total ? `${currency} ${total}` : null,
+                            durationMinutes != null ? `${durationMinutes} min` : null,
+                            stops != null ? `${stops} stops` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" • ")}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </ExpandableSection>
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {flights.map((f, idx) => {
+                const flight = isObject(f) ? f : undefined;
+                if (!flight) return null;
+                const from = pickString(flight, ["from"]);
+                const to = pickString(flight, ["to"]);
+                const depart = asIsoDate(flight.depart_date);
+                const arrive = asIsoDate(flight.arrive_date);
+                const options = pickArray(flight, ["options"]) ?? [];
+                const best = bestByRankingScore(options);
+                const price = best && isObject(best.price) ? (best.price as UnknownRecord) : undefined;
+                const currency = price ? pickString(price, ["currency"]) : undefined;
+                const total = price ? pickString(price, ["total", "grandTotal"]) : undefined;
+                const durationMinutes =
+                  best && isObject(best._ranking)
+                    ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"])
+                    : undefined;
+                const stops =
+                  best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["stops"]) : undefined;
+
+                return (
+                  <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">
+                        {[from, to].filter(Boolean).join(" → ") || `Flight ${idx + 1}`}
+                      </p>
+                      <p className="text-xs text-muted">{[depart, arrive].filter(Boolean).join(" → ")}</p>
+                    </div>
+                    {(currency || total || durationMinutes != null || stops != null) && (
+                      <p className="mt-1 text-xs text-muted">
+                        {[
+                          currency && total ? `${currency} ${total}` : null,
+                          durationMinutes != null ? `${durationMinutes} min` : null,
+                          stops != null ? `${stops} stops` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(" • ")}
+                      </p>
+                    )}
                   </div>
-                  {(currency || total || durationMinutes != null || stops != null) && (
-                    <p className="mt-1 text-xs text-muted">
-                      {[
-                        currency && total ? `${currency} ${total}` : null,
-                        durationMinutes != null ? `${durationMinutes} min` : null,
-                        stops != null ? `${stops} stops` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" • ")}
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-            {flights.length > 5 && <p className="text-xs text-muted">Showing first 5 flight legs…</p>}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {hotels.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-medium text-muted">Hotels</p>
-          <div className="mt-2 space-y-2">
-            {hotels.slice(0, 4).map((h, idx) => {
-              const stay = isObject(h) ? h : undefined;
-              if (!stay) return null;
-              const checkIn = asIsoDate(stay.check_in);
-              const checkOut = asIsoDate(stay.check_out);
-              const cityCode = pickString(stay, ["city_code"]);
-              const options = pickArray(stay, ["options"]) ?? [];
-              const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
-              const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
-              const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
-              const ranking = best && isObject(best._ranking) ? (best._ranking as UnknownRecord) : undefined;
-              const pricePerNight = ranking ? pickNumber(ranking, ["price_per_night"]) : undefined;
-              return (
-                <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-sm font-medium text-foreground">{hotelName ?? `Hotel ${idx + 1}`}</p>
-                    <p className="text-xs text-muted">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
+          {hotels.length > 3 ? (
+            <div className="mt-2">
+              <ExpandableSection
+                isExpanded={showAllHotels}
+                onToggle={() => setShowAllHotels((prev) => !prev)}
+                collapsedMaxHeightClass="max-h-[300px]"
+              >
+                {hotels.map((h, idx) => {
+                  const stay = isObject(h) ? h : undefined;
+                  if (!stay) return null;
+                  const checkIn = asIsoDate(stay.check_in);
+                  const checkOut = asIsoDate(stay.check_out);
+                  const cityCode = pickString(stay, ["city_code"]);
+                  const options = pickArray(stay, ["options"]) ?? [];
+                  const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
+                  const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
+                  const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
+                  const ranking = best && isObject(best._ranking) ? (best._ranking as UnknownRecord) : undefined;
+                  const pricePerNight = ranking ? pickNumber(ranking, ["price_per_night"]) : undefined;
+                  return (
+                    <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">{hotelName ?? `Hotel ${idx + 1}`}</p>
+                        <p className="text-xs text-muted">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
+                      </div>
+                      <p className="mt-1 text-xs text-muted">
+                        {[cityCode, pricePerNight != null ? `${pricePerNight}/night` : null].filter(Boolean).join(" • ")}
+                      </p>
+                    </div>
+                  );
+                })}
+              </ExpandableSection>
+            </div>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {hotels.map((h, idx) => {
+                const stay = isObject(h) ? h : undefined;
+                if (!stay) return null;
+                const checkIn = asIsoDate(stay.check_in);
+                const checkOut = asIsoDate(stay.check_out);
+                const cityCode = pickString(stay, ["city_code"]);
+                const options = pickArray(stay, ["options"]) ?? [];
+                const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
+                const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
+                const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
+                const ranking = best && isObject(best._ranking) ? (best._ranking as UnknownRecord) : undefined;
+                const pricePerNight = ranking ? pickNumber(ranking, ["price_per_night"]) : undefined;
+                return (
+                  <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium text-foreground">{hotelName ?? `Hotel ${idx + 1}`}</p>
+                      <p className="text-xs text-muted">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
+                    </div>
+                    <p className="mt-1 text-xs text-muted">
+                      {[cityCode, pricePerNight != null ? `${pricePerNight}/night` : null].filter(Boolean).join(" • ")}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted">
-                    {[cityCode, pricePerNight != null ? `${pricePerNight}/night` : null].filter(Boolean).join(" • ")}
-                  </p>
-                </div>
-              );
-            })}
-            {hotels.length > 4 && <p className="text-xs text-muted">Showing first 4 hotel stays…</p>}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
     </div>
