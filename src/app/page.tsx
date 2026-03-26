@@ -469,17 +469,19 @@ export default function Home() {
                                   key={i}
                                   className="rounded-lg border border-border bg-background/50 overflow-x-auto"
                                 >
-                                  <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        copyJsonToClipboard(block.data, `${message.id}-${i}`)
-                                      }
-                                      className="text-xs font-medium text-muted hover:text-foreground transition-colors"
-                                    >
-                                      {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
-                                    </button>
-                                  </div>
+                                  {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
+                                    <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          copyJsonToClipboard(block.data, `${message.id}-${i}`)
+                                        }
+                                        className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+                                      >
+                                        {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
+                                      </button>
+                                    </div>
+                                  )}
                                   <div className="p-3">
                                     {looksLikeItinerary(block.data) ? (
                                       <ItineraryCard data={block.data} />
