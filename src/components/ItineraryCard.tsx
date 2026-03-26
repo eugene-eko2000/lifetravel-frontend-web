@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type UnknownRecord = Record<string, unknown>;
+const COLLAPSED_VISIBLE_ITEMS = 2;
 
 function isObject(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -126,6 +127,10 @@ function ExpandableSection({
 function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ranked: UnknownRecord }) {
   const [showAllFlights, setShowAllFlights] = useState(false);
   const [showAllHotels, setShowAllHotels] = useState(false);
+  const [renderAllFlights, setRenderAllFlights] = useState(false);
+  const [renderAllHotels, setRenderAllHotels] = useState(false);
+  const flightsCollapseTimerRef = useRef<number | null>(null);
+  const hotelsCollapseTimerRef = useRef<number | null>(null);
   const itineraryIndex = pickNumber(envelope, ["itinerary_index"]);
   const itineraryCount = pickNumber(envelope, ["itinerary_count"]);
 
@@ -138,6 +143,41 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
 
   const flights = pickArray(ranked, ["flights"]) ?? [];
   const hotels = pickArray(ranked, ["hotels"]) ?? [];
+  const flightsForRender = renderAllFlights ? flights : flights.slice(0, COLLAPSED_VISIBLE_ITEMS);
+  const hotelsForRender = renderAllHotels ? hotels : hotels.slice(0, COLLAPSED_VISIBLE_ITEMS);
+
+  useEffect(() => {
+    if (showAllFlights) {
+      if (flightsCollapseTimerRef.current) window.clearTimeout(flightsCollapseTimerRef.current);
+      setRenderAllFlights(true);
+      return;
+    }
+    // Keep full list rendered while collapsing to avoid a jump,
+    // then trim to collapsed items once the height transition ends.
+    if (renderAllFlights) {
+      if (flightsCollapseTimerRef.current) window.clearTimeout(flightsCollapseTimerRef.current);
+      flightsCollapseTimerRef.current = window.setTimeout(() => setRenderAllFlights(false), 520);
+    }
+  }, [showAllFlights, renderAllFlights]);
+
+  useEffect(() => {
+    if (showAllHotels) {
+      if (hotelsCollapseTimerRef.current) window.clearTimeout(hotelsCollapseTimerRef.current);
+      setRenderAllHotels(true);
+      return;
+    }
+    if (renderAllHotels) {
+      if (hotelsCollapseTimerRef.current) window.clearTimeout(hotelsCollapseTimerRef.current);
+      hotelsCollapseTimerRef.current = window.setTimeout(() => setRenderAllHotels(false), 520);
+    }
+  }, [showAllHotels, renderAllHotels]);
+
+  useEffect(() => {
+    return () => {
+      if (flightsCollapseTimerRef.current) window.clearTimeout(flightsCollapseTimerRef.current);
+      if (hotelsCollapseTimerRef.current) window.clearTimeout(hotelsCollapseTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
@@ -178,14 +218,14 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
       {flights.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-medium text-muted">Flights</p>
-          {flights.length > 3 ? (
+          {flights.length > COLLAPSED_VISIBLE_ITEMS ? (
             <div className="mt-2">
               <ExpandableSection
                 isExpanded={showAllFlights}
                 onToggle={() => setShowAllFlights((prev) => !prev)}
-                collapsedMaxHeightClass="max-h-[300px]"
+                collapsedMaxHeightClass="max-h-[220px]"
               >
-                {flights.map((f, idx) => {
+                {flightsForRender.map((f, idx) => {
                   const flight = isObject(f) ? f : undefined;
                   if (!flight) return null;
                   const from = pickString(flight, ["from"]);
@@ -230,7 +270,7 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
             </div>
           ) : (
             <div className="mt-2 space-y-2">
-              {flights.map((f, idx) => {
+              {flightsForRender.map((f, idx) => {
                 const flight = isObject(f) ? f : undefined;
                 if (!flight) return null;
                 const from = pickString(flight, ["from"]);
@@ -279,14 +319,14 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
       {hotels.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-medium text-muted">Hotels</p>
-          {hotels.length > 3 ? (
+          {hotels.length > COLLAPSED_VISIBLE_ITEMS ? (
             <div className="mt-2">
               <ExpandableSection
                 isExpanded={showAllHotels}
                 onToggle={() => setShowAllHotels((prev) => !prev)}
-                collapsedMaxHeightClass="max-h-[300px]"
+                collapsedMaxHeightClass="max-h-[220px]"
               >
-                {hotels.map((h, idx) => {
+                {hotelsForRender.map((h, idx) => {
                   const stay = isObject(h) ? h : undefined;
                   if (!stay) return null;
                   const checkIn = asIsoDate(stay.check_in);
@@ -314,7 +354,7 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
             </div>
           ) : (
             <div className="mt-2 space-y-2">
-              {hotels.map((h, idx) => {
+              {hotelsForRender.map((h, idx) => {
                 const stay = isObject(h) ? h : undefined;
                 if (!stay) return null;
                 const checkIn = asIsoDate(stay.check_in);
