@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
 
 type UnknownRecord = Record<string, unknown>;
 /** First N flights/hotels visible per leg before "Show more". */
@@ -281,6 +281,88 @@ function bestByRankingScore(options: unknown[]): UnknownRecord | undefined {
     .sort((a, b) => b.score - a.score)[0]?.o;
 }
 
+/** Segments from Amadeus itineraries or a top-level `segments` array. */
+function collectSegmentsFromRecord(record: UnknownRecord): UnknownRecord[] {
+  const fromItin = collectAmadeusSegmentsInOrder(record);
+  if (fromItin.length > 0) return fromItin;
+  const direct = pickArray(record, ["segments"]) ?? [];
+  return direct.filter(isObject) as UnknownRecord[];
+}
+
+/** Prefer best-ranked option when it carries segment data; else the flight record. */
+function gatherSegmentsForFlight(flight: UnknownRecord): UnknownRecord[] {
+  const options = pickArray(flight, ["options"]) ?? [];
+  const best = bestByRankingScore(options);
+  const candidates: UnknownRecord[] = [];
+  if (best) candidates.push(best);
+  candidates.push(flight);
+  for (const c of candidates) {
+    const segs = collectSegmentsFromRecord(c);
+    if (segs.length > 0) return segs;
+  }
+  return [];
+}
+
+function getSegmentEndpoint(seg: UnknownRecord, side: "departure" | "arrival"): UnknownRecord | undefined {
+  const v = seg[side];
+  return isObject(v) ? v : undefined;
+}
+
+function formatAirportLine(seg: UnknownRecord, side: "departure" | "arrival"): string {
+  const ep = getSegmentEndpoint(seg, side);
+  if (!ep) return "—";
+  const iata = pickString(ep, ["iataCode", "iata"]);
+  const city = pickString(ep, ["cityName", "city"]);
+  const terminal = pickString(ep, ["terminal"]);
+  const parts = [iata, city].filter(Boolean);
+  if (terminal) parts.push(`Terminal ${terminal}`);
+  return parts.join(" · ") || "—";
+}
+
+function formatSegmentCarrier(seg: UnknownRecord): string {
+  const carrier = pickString(seg, ["carrierCode", "carrier"]);
+  const n = seg.number ?? seg.flight_number;
+  const num =
+    typeof n === "number" && Number.isFinite(n)
+      ? String(n)
+      : typeof n === "string" && n.trim()
+        ? n.trim()
+        : pickString(seg, ["number", "flight_number"]);
+  if (carrier && num) return `${carrier} ${num}`;
+  const airline = pickString(seg, ["airline", "operatingCarrier"]);
+  if (airline) return num ? `${airline} ${num}` : airline;
+  return pickString(seg, ["flightNumber"]) ?? "Flight";
+}
+
+function parseAtFromSegment(seg: UnknownRecord, side: "departure" | "arrival"): Date | null {
+  const ep = getSegmentEndpoint(seg, side);
+  if (!ep) return null;
+  const at = pickString(ep, ["at", "dateTime", "localDateTime", "datetime"]);
+  if (!at) return null;
+  const d = new Date(at);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): string | null {
+  const arr = parseAtFromSegment(prev, "arrival");
+  const dep = parseAtFromSegment(next, "departure");
+  if (!arr || !dep || dep.getTime() <= arr.getTime()) return null;
+  const mins = Math.round((dep.getTime() - arr.getTime()) / 60000);
+  return formatDurationMinutesAsHoursMinutes(mins);
+}
+
+function formatLegPrice(flight: UnknownRecord, best: UnknownRecord | undefined): string | undefined {
+  const fromRecord = (rec: UnknownRecord | undefined) => {
+    if (!rec) return undefined;
+    const p = pickRecord(rec, ["price"]);
+    if (!p) return undefined;
+    const c = pickString(p, ["currency"]);
+    const t = pickString(p, ["total", "grandTotal"]);
+    return c && t ? `${c} ${t}` : undefined;
+  };
+  return fromRecord(best) ?? fromRecord(flight);
+}
+
 /** Prefer explicit `legs`; otherwise one synthetic leg from top-level flights + hotels. */
 function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
   const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
@@ -314,11 +396,14 @@ function FlightOptionBox({
   opt,
   optionIndex,
   parentFlight,
+  parentFlightIndex,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentFlight: UnknownRecord;
+  parentFlightIndex: number;
 }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const from =
     pickString(opt, ["from", "origin", "departure_city"]) ?? pickString(parentFlight, ["from", "origin"]);
   const to =
@@ -338,14 +423,58 @@ function FlightOptionBox({
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
   const detailLine = summarizeFlightOption(opt);
+  const legPriceDisplay = formatLegPrice(opt, undefined);
+  const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
-    <div className="rounded-lg border border-border/80 bg-background/40 p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
-      </div>
-      {detailLine ? <p className="mt-1 text-xs text-muted">{detailLine}</p> : null}
+    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+      <button
+        type="button"
+        onClick={() => setDetailsOpen((v) => !v)}
+        aria-expanded={detailsOpen}
+        aria-controls={detailId}
+        id={`${detailId}-summary`}
+        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+          detailsOpen ? "rounded-t-lg" : "rounded-lg"
+        }`}
+      >
+        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
+          {detailsOpen ? "▼" : "▶"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">{title}</p>
+            {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
+          </div>
+          {detailLine ? <p className="mt-1 text-xs text-muted">{detailLine}</p> : null}
+        </div>
+      </button>
+      {detailsOpen && (
+        <div
+          id={detailId}
+          role="region"
+          aria-labelledby={`${detailId}-summary`}
+          className="border-t border-border bg-background/25 px-3 py-3"
+        >
+          <div className="mb-3 flex items-start justify-between gap-2">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
+              <p className="text-sm font-semibold text-foreground">{legPriceDisplay ?? "—"}</p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailsOpen(false);
+              }}
+              className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground transition-colors"
+            >
+              Collapse
+            </button>
+          </div>
+          <FlightSegmentDetailList flight={parentFlight} segmentsFrom={opt} />
+        </div>
+      )}
     </div>
   );
 }
@@ -389,17 +518,99 @@ function HotelOptionBox({
   );
 }
 
+function FlightSegmentFallback({ flight }: { flight: UnknownRecord }) {
+  const dep = formatFlightEndpointDisplay(flight, "departure");
+  const arr = formatFlightEndpointDisplay(flight, "arrival");
+  const from = pickString(flight, ["from", "origin"]);
+  const to = pickString(flight, ["to", "destination"]);
+  return (
+    <div className="rounded-md border border-border/50 bg-background/30 p-3">
+      <p className="text-sm font-medium text-foreground">{[from, to].filter(Boolean).join(" → ") || "Route"}</p>
+      <p className="mt-1 text-xs text-muted">{[dep, arr].filter(Boolean).join(" → ") || "—"}</p>
+      <p className="mt-2 text-[10px] leading-snug text-muted">
+        Per-segment breakdown is not available for this itinerary.
+      </p>
+    </div>
+  );
+}
+
+function FlightSegmentConnectionRow({ prev, next }: { prev: UnknownRecord; next: UnknownRecord }) {
+  const layover = formatConnectionLayover(prev, next);
+  const hub = formatAirportLine(next, "departure");
+  if (!layover) return null;
+  return (
+    <div className="rounded-md border border-dashed border-border/60 bg-background/20 px-3 py-2 text-xs">
+      <span className="font-medium text-foreground">Connection</span>
+      <span className="text-muted"> at {hub}</span>
+      <span className="text-muted"> · {layover}</span>
+    </div>
+  );
+}
+
+function FlightSegmentCard({ seg, index, total }: { seg: UnknownRecord; index: number; total: number }) {
+  const dep = formatFlightEndpointFromNestedEndpoint(seg, "departure");
+  const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
+  const carrier = formatSegmentCarrier(seg);
+  const depLoc = formatAirportLine(seg, "departure");
+  const arrLoc = formatAirportLine(seg, "arrival");
+  return (
+    <div className="rounded-md border border-border/50 bg-background/30 p-3">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
+        Segment {index + 1}
+        {total > 1 ? ` of ${total}` : ""}
+      </p>
+      <p className="mt-1 text-sm font-medium text-foreground">{carrier}</p>
+      <dl className="mt-2 space-y-2 text-xs">
+        <div>
+          <dt className="text-[10px] font-medium uppercase text-muted">Departure</dt>
+          <dd className="mt-0.5 text-foreground">{depLoc}</dd>
+          <dd className="text-muted">{dep ?? "—"}</dd>
+        </div>
+        <div>
+          <dt className="text-[10px] font-medium uppercase text-muted">Arrival</dt>
+          <dd className="mt-0.5 text-foreground">{arrLoc}</dd>
+          <dd className="text-muted">{arr ?? "—"}</dd>
+        </div>
+      </dl>
+    </div>
+  );
+}
+
+function FlightSegmentDetailList({
+  flight,
+  segmentsFrom,
+}: {
+  flight: UnknownRecord;
+  /** When set (e.g. a fare option), segments are read from this record only. */
+  segmentsFrom?: UnknownRecord;
+}) {
+  const segments =
+    segmentsFrom !== undefined ? collectSegmentsFromRecord(segmentsFrom) : gatherSegmentsForFlight(flight);
+  const fallbackRecord = segmentsFrom ?? flight;
+  if (segments.length === 0) {
+    return <FlightSegmentFallback flight={fallbackRecord} />;
+  }
+  return (
+    <div className="space-y-2">
+      {segments.map((seg, i) => (
+        <Fragment key={i}>
+          <FlightSegmentCard seg={seg} index={i} total={segments.length} />
+          {i < segments.length - 1 ? <FlightSegmentConnectionRow prev={segments[i]} next={segments[i + 1]} /> : null}
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
 function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: number }) {
-  const [open, setOpen] = useState(false);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const from = pickString(flight, ["from"]);
   const to = pickString(flight, ["to"]);
   const depart = formatFlightEndpointDisplay(flight, "departure");
   const arrive = formatFlightEndpointDisplay(flight, "arrival");
   const options = pickArray(flight, ["options"]) ?? [];
   const best = bestByRankingScore(options);
-  const price = best && isObject(best.price) ? (best.price as UnknownRecord) : undefined;
-  const currency = price ? pickString(price, ["currency"]) : undefined;
-  const total = price ? pickString(price, ["total", "grandTotal"]) : undefined;
+  const legPriceDisplay = formatLegPrice(flight, best);
   const durationMinutes =
     best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"]) : undefined;
   const stops =
@@ -416,52 +627,78 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
     <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
+        onClick={() => setDetailsOpen((v) => !v)}
+        aria-expanded={detailsOpen}
+        aria-controls={`flight-detail-${labelIndex}`}
+        id={`flight-summary-${labelIndex}`}
         className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
-          open ? "rounded-t-lg" : "rounded-lg"
+          detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
         <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
-          {open ? "▼" : "▶"}
+          {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-sm font-medium text-foreground">{title}</p>
             <p className="text-xs text-muted shrink-0">{[depart, arrive].filter(Boolean).join(" → ")}</p>
           </div>
-          {(currency || total || durationMinutes != null || stops != null) && (
+          {(legPriceDisplay || durationMinutes != null || stops != null) && (
             <p className="mt-1 text-xs text-muted">
-              {[
-                currency && total ? `${currency} ${total}` : null,
-                durationMinutes != null ? formatDurationMinutesAsHoursMinutes(durationMinutes) : null,
-                stops != null ? `${stops} stops` : null,
-              ]
+              {[legPriceDisplay, durationMinutes != null ? formatDurationMinutesAsHoursMinutes(durationMinutes) : null, stops != null ? `${stops} stops` : null]
                 .filter(Boolean)
                 .join(" • ")}
             </p>
           )}
         </div>
       </button>
-      {open && (
-        <div className={LEG_OPTION_PANEL_CLASS}>
-          {options.length > 0 ? (
-            moreFlightOptions.length > 0 ? (
-              <div className="space-y-2">
-                {moreFlightOptions.map(({ raw, i }) => (
-                  <FlightOptionBox key={i} opt={raw as UnknownRecord} optionIndex={i} parentFlight={flight} />
-                ))}
+      {detailsOpen && (
+        <div
+          id={`flight-detail-${labelIndex}`}
+          role="region"
+          aria-labelledby={`flight-summary-${labelIndex}`}
+          className={LEG_OPTION_PANEL_CLASS}
+        >
+          <div className="mb-3 flex items-start justify-between gap-2 pl-3">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
+              <p className="text-sm font-semibold text-foreground">{legPriceDisplay ?? "—"}</p>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDetailsOpen(false);
+              }}
+              className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground transition-colors"
+            >
+              Collapse
+            </button>
+          </div>
+          <FlightSegmentDetailList flight={flight} />
+          {options.length > 0 &&
+            (moreFlightOptions.length > 0 ? (
+              <div className="mt-4 space-y-2 border-t border-border/60 pt-3">
+                <p className="pl-3 text-[10px] font-medium uppercase tracking-wide text-muted">Other fare options</p>
+                <div className="space-y-2">
+                  {moreFlightOptions.map(({ raw, i }) => (
+                    <FlightOptionBox
+                      key={i}
+                      opt={raw as UnknownRecord}
+                      optionIndex={i}
+                      parentFlight={flight}
+                      parentFlightIndex={labelIndex}
+                    />
+                  ))}
+                </div>
               </div>
             ) : (
-              <p className="pl-3 text-xs text-muted">
+              <p className="mt-4 border-t border-border/60 pt-3 pl-3 text-xs text-muted">
                 {options.filter(isObject).length <= 1
                   ? "No other fare options."
                   : "No additional fare options to show."}
               </p>
-            )
-          ) : (
-            <p className="pl-3 text-xs text-muted">No fare options listed.</p>
-          )}
+            ))}
         </div>
       )}
     </div>
@@ -565,7 +802,7 @@ function LegFlightsBlock({ flights }: { flights: unknown[] }) {
           }
           isExpanded={showAll}
           onToggle={() => setShowAll((prev) => !prev)}
-          collapsedMaxHeightClass="max-h-[220px]"
+          collapsedMaxHeightClass="max-h-[min(70vh,560px)]"
         >
           {rest.map((flight, idx) => (
             <FlightRow
@@ -610,7 +847,7 @@ function LegHotelsBlock({ hotels }: { hotels: unknown[] }) {
           }
           isExpanded={showAll}
           onToggle={() => setShowAll((prev) => !prev)}
-          collapsedMaxHeightClass="max-h-[220px]"
+          collapsedMaxHeightClass="max-h-[min(70vh,560px)]"
         >
           {rest.map((stay, idx) => (
             <HotelRow
@@ -646,15 +883,18 @@ function ExpandableSection({
     <div className="mt-2 flex w-full min-w-0 flex-col gap-2">
       {prefix}
       <div
-        className={`relative w-full min-w-0 overflow-hidden transition-[max-height] ${heightTransitionClass} ${
-          isExpanded ? "max-h-[4000px]" : collapsedMaxHeightClass
+        className={`relative w-full min-w-0 transition-[max-height] ${heightTransitionClass} ${
+          isExpanded
+            ? "max-h-[min(96vh,8000px)] overflow-y-auto overscroll-y-contain"
+            : `${collapsedMaxHeightClass} overflow-y-auto overscroll-y-contain`
         }`}
       >
-        <div className="flex w-full min-w-0 flex-col gap-2">{children}</div>
+        <div className="flex w-full min-w-0 flex-col gap-2 pb-1">{children}</div>
         <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-surface via-surface/85 to-transparent backdrop-blur-[1px] transition-opacity ${
+          className={`pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface via-surface/70 to-transparent transition-opacity ${
             isExpanded ? "opacity-0 duration-250" : "opacity-100 duration-500"
           }`}
+          aria-hidden
         />
       </div>
       <div className="flex justify-center">
