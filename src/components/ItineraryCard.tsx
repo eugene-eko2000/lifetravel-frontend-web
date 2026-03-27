@@ -1,10 +1,8 @@
 "use client";
 
-import { Fragment, useState, type ReactNode } from "react";
+import { Fragment, useState } from "react";
 
 type UnknownRecord = Record<string, unknown>;
-/** First N flights/hotels visible per leg before "Show more". */
-const LEG_LIST_FIRST_VISIBLE = 1;
 /** Inset for expanded options so card text lines up with row header (p-3 + chevron w-4 + gap-2). */
 const LEG_OPTION_PANEL_CLASS = "border-t border-border bg-background/25 pl-6 pr-3 py-2 space-y-2 rounded-b-lg";
 
@@ -773,148 +771,36 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
 }
 
 function LegFlightsBlock({ flights }: { flights: unknown[] }) {
-  const [showAll, setShowAll] = useState(false);
   const list = flights.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
-
-  const head = list.slice(0, LEG_LIST_FIRST_VISIBLE);
-  const rest = list.slice(LEG_LIST_FIRST_VISIBLE);
 
   const listClass = "mt-2 flex w-full min-w-0 flex-col gap-2";
 
   return (
     <div>
       <p className="text-xs font-medium text-muted">Flights</p>
-      {rest.length === 0 ? (
-        <div className={listClass}>
-          {head.map((flight, idx) => (
-            <FlightRow key={idx} flight={flight} labelIndex={idx} />
-          ))}
-        </div>
-      ) : (
-        <ExpandableSection
-          prefix={
-            <>
-              {head.map((flight, idx) => (
-                <FlightRow key={idx} flight={flight} labelIndex={idx} />
-              ))}
-            </>
-          }
-          isExpanded={showAll}
-          onToggle={() => setShowAll((prev) => !prev)}
-          collapsedMaxHeightClass="max-h-[min(70vh,560px)]"
-        >
-          {rest.map((flight, idx) => (
-            <FlightRow
-              key={idx + LEG_LIST_FIRST_VISIBLE}
-              flight={flight}
-              labelIndex={idx + LEG_LIST_FIRST_VISIBLE}
-            />
-          ))}
-        </ExpandableSection>
-      )}
+      <div className={listClass}>
+        {list.map((flight, idx) => (
+          <FlightRow key={idx} flight={flight} labelIndex={idx} />
+        ))}
+      </div>
     </div>
   );
 }
 
 function LegHotelsBlock({ hotels }: { hotels: unknown[] }) {
-  const [showAll, setShowAll] = useState(false);
   const list = hotels.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
-
-  const head = list.slice(0, LEG_LIST_FIRST_VISIBLE);
-  const rest = list.slice(LEG_LIST_FIRST_VISIBLE);
 
   const listClass = "mt-2 flex w-full min-w-0 flex-col gap-2";
 
   return (
     <div>
       <p className="text-xs font-medium text-muted">Hotels</p>
-      {rest.length === 0 ? (
-        <div className={listClass}>
-          {head.map((stay, idx) => (
-            <HotelRow key={idx} stay={stay} labelIndex={idx} />
-          ))}
-        </div>
-      ) : (
-        <ExpandableSection
-          prefix={
-            <>
-              {head.map((stay, idx) => (
-                <HotelRow key={idx} stay={stay} labelIndex={idx} />
-              ))}
-            </>
-          }
-          isExpanded={showAll}
-          onToggle={() => setShowAll((prev) => !prev)}
-          collapsedMaxHeightClass="max-h-[min(70vh,560px)]"
-        >
-          {rest.map((stay, idx) => (
-            <HotelRow
-              key={idx + LEG_LIST_FIRST_VISIBLE}
-              stay={stay}
-              labelIndex={idx + LEG_LIST_FIRST_VISIBLE}
-            />
-          ))}
-        </ExpandableSection>
-      )}
-    </div>
-  );
-}
-
-function ExpandableSection({
-  isExpanded,
-  onToggle,
-  collapsedMaxHeightClass,
-  children,
-  prefix,
-}: {
-  isExpanded: boolean;
-  onToggle: () => void;
-  collapsedMaxHeightClass: string;
-  children: ReactNode;
-  prefix?: ReactNode;
-}) {
-  const heightTransitionClass = isExpanded
-    ? "duration-700 ease-[cubic-bezier(0.22,1,0.36,1)]"
-    : "duration-500 ease-[cubic-bezier(0.4,0,0.2,1)]";
-
-  return (
-    <div className="mt-2 flex w-full min-w-0 flex-col gap-2">
-      {prefix}
-      <div
-        className={`relative w-full min-w-0 transition-[max-height] ${heightTransitionClass} ${
-          isExpanded
-            ? "max-h-[min(96vh,8000px)] overflow-y-auto overscroll-y-contain"
-            : `${collapsedMaxHeightClass} overflow-y-auto overscroll-y-contain`
-        }`}
-      >
-        <div className="flex w-full min-w-0 flex-col gap-2 pb-1">{children}</div>
-        <div
-          className={`pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-surface via-surface/70 to-transparent transition-opacity ${
-            isExpanded ? "opacity-0 duration-250" : "opacity-100 duration-500"
-          }`}
-          aria-hidden
-        />
-      </div>
-      <div className="flex justify-center">
-        <button
-          type="button"
-          onClick={onToggle}
-          className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-3 py-1 text-xs font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-        >
-          {isExpanded ? (
-            <>
-              <span aria-hidden>↑</span>
-              <span>Show less</span>
-            </>
-          ) : (
-            <>
-              <span aria-hidden>↓</span>
-              <span>Show more</span>
-            </>
-          )}
-        </button>
+      <div className={listClass}>
+        {list.map((stay, idx) => (
+          <HotelRow key={idx} stay={stay} labelIndex={idx} />
+        ))}
       </div>
     </div>
   );

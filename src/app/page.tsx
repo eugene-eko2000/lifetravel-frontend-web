@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 import { JsonViewer } from "@/components/JsonViewer";
 import { ItineraryCard, looksLikeItinerary } from "@/components/ItineraryCard";
 
@@ -38,6 +46,105 @@ interface StatusMessage {
 }
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
+
+const ITINERARY_PAGE_SIZE = 10;
+
+function AssistantMessageBlocks({
+  message,
+  copiedBlockKey,
+  copyJsonToClipboard,
+  isConnecting,
+  isStreaming,
+  isDebugPanelOpen,
+}: {
+  message: Message;
+  copiedBlockKey: string | null;
+  copyJsonToClipboard: (data: unknown, blockKey: string) => void;
+  isConnecting: boolean;
+  isStreaming: boolean;
+  isDebugPanelOpen: boolean;
+}) {
+  const blocks = message.blocks ?? [];
+  const itineraryIndices = useMemo(() => {
+    const out: number[] = [];
+    blocks.forEach((b, i) => {
+      if (b.type === "json" && looksLikeItinerary(b.data)) out.push(i);
+    });
+    return out;
+  }, [blocks]);
+  const itineraryCount = itineraryIndices.length;
+
+  const [visibleItineraryCount, setVisibleItineraryCount] = useState(ITINERARY_PAGE_SIZE);
+
+  useEffect(() => {
+    setVisibleItineraryCount(ITINERARY_PAGE_SIZE);
+  }, [message.id]);
+
+  const visibleItineraryBlockIndices = useMemo(
+    () => new Set(itineraryIndices.slice(0, visibleItineraryCount)),
+    [itineraryIndices, visibleItineraryCount]
+  );
+
+  const hiddenItineraryCount = Math.max(0, itineraryCount - visibleItineraryCount);
+  const canShowMore = hiddenItineraryCount > 0;
+
+  return (
+    <>
+      {blocks.map((block, i) => {
+        if (block.type === "json" && looksLikeItinerary(block.data) && !visibleItineraryBlockIndices.has(i)) {
+          return null;
+        }
+        if (block.type === "json") {
+          return (
+            <div
+              key={i}
+              className="rounded-lg border border-border bg-background/50 overflow-x-auto"
+            >
+              {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
+                <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
+                  <button
+                    type="button"
+                    onClick={() => copyJsonToClipboard(block.data, `${message.id}-${i}`)}
+                    className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+                  >
+                    {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              )}
+              <div className="p-3">
+                {looksLikeItinerary(block.data) ? (
+                  <ItineraryCard data={block.data} />
+                ) : (
+                  <JsonViewer data={block.data} defaultExpanded={true} />
+                )}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <pre
+            key={i}
+            className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
+          >
+            {block.data}
+          </pre>
+        );
+      })}
+      {canShowMore && (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            onClick={() => setVisibleItineraryCount((c) => c + ITINERARY_PAGE_SIZE)}
+            className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+          >
+            Show more… ({hiddenItineraryCount} more)
+          </button>
+        </div>
+      )}
+      {(isConnecting || isStreaming) && <span className="inline-block animate-pulse">▊</span>}
+    </>
+  );
+}
 
 const normalizeDebugLevel = (value: unknown): DebugMessage["level"] => {
   if (typeof value !== "string") return undefined;
@@ -123,6 +230,7 @@ export default function Home() {
   const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(true);
   const lastLeftPaneWidthPercentRef = useRef(leftPaneWidthPercent);
+  /** Sentinel for optional scroll anchoring; not used for auto-scroll on itinerary updates. */
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const debugPanelScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -146,11 +254,6 @@ export default function Home() {
       setTimeout(() => setCopiedPromptId(null), 2000);
     });
   }, []);
-
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
 
   // Auto-scroll debug pane only when the user is already near the bottom (not reading older lines)
   useEffect(() => {
@@ -462,47 +565,14 @@ export default function Home() {
                           </div>
                         )}
                         {message.role === "assistant" && message.blocks && message.blocks.length > 0 && (
-                          <>
-                            {message.blocks.map((block, i) =>
-                              block.type === "json" ? (
-                                <div
-                                  key={i}
-                                  className="rounded-lg border border-border bg-background/50 overflow-x-auto"
-                                >
-                                  {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
-                                    <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          copyJsonToClipboard(block.data, `${message.id}-${i}`)
-                                        }
-                                        className="text-xs font-medium text-muted hover:text-foreground transition-colors"
-                                      >
-                                        {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
-                                      </button>
-                                    </div>
-                                  )}
-                                  <div className="p-3">
-                                    {looksLikeItinerary(block.data) ? (
-                                      <ItineraryCard data={block.data} />
-                                    ) : (
-                                      <JsonViewer data={block.data} defaultExpanded={true} />
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <pre
-                                  key={i}
-                                  className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
-                                >
-                                  {block.data}
-                                </pre>
-                              )
-                            )}
-                            {(isConnecting || isStreaming) && (
-                              <span className="inline-block animate-pulse">▊</span>
-                            )}
-                          </>
+                          <AssistantMessageBlocks
+                            message={message}
+                            copiedBlockKey={copiedBlockKey}
+                            copyJsonToClipboard={copyJsonToClipboard}
+                            isConnecting={isConnecting}
+                            isStreaming={isStreaming}
+                            isDebugPanelOpen={isDebugPanelOpen}
+                          />
                         )}
                         {message.role === "assistant" &&
                           (!message.blocks || message.blocks.length === 0) && (
@@ -531,7 +601,7 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                <div ref={messagesEndRef} />
+                <div ref={messagesEndRef} className="h-0 w-full shrink-0" aria-hidden />
               </div>
             )}
           </div>
