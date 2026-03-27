@@ -1,6 +1,31 @@
 "use client";
 
-import { Fragment, createContext, useContext, useState } from "react";
+import {
+  DndContext,
+  closestCorners,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import {
+  Fragment,
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 const ItineraryCurrencyContext = createContext<string | undefined>(undefined);
 
@@ -9,8 +34,41 @@ function useItineraryCurrency(): string | undefined {
 }
 
 type UnknownRecord = Record<string, unknown>;
-/** Inset for expanded options so card text lines up with row header (p-3 + chevron w-4 + gap-2). */
-const LEG_OPTION_PANEL_CLASS = "border-t border-border bg-background/25 pl-6 pr-3 py-2 space-y-2 rounded-b-lg";
+/** Inset for expanded flight/hotel option lists under a leg row. */
+const LEG_OPTION_PANEL_CLASS = "border-t border-border bg-background/25 pl-3 pr-3 py-2 space-y-2 rounded-b-lg";
+
+/** Stable id per option object so SortableContext `items` order changes when data reorders (index-only ids break dnd-kit). */
+const flightOptionSortableSuffix = new WeakMap<UnknownRecord, string>();
+const hotelOptionSortableSuffix = new WeakMap<UnknownRecord, string>();
+
+function randomSortableSuffix(): string {
+  const c = globalThis.crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return `opt-${Math.random().toString(36).slice(2)}`;
+}
+
+function getFlightOptionSortableId(opt: UnknownRecord, legIndex: number, flightIndex: number): string {
+  let suffix = flightOptionSortableSuffix.get(opt);
+  if (!suffix) {
+    suffix =
+      pickString(opt, ["id", "offer_id", "offerId", "option_id"]) ?? randomSortableSuffix();
+    flightOptionSortableSuffix.set(opt, suffix);
+  }
+  return `flight-${legIndex}-${flightIndex}-${suffix}`;
+}
+
+function getHotelOptionSortableId(opt: UnknownRecord, legIndex: number, hotelIndex: number): string {
+  let suffix = hotelOptionSortableSuffix.get(opt);
+  if (!suffix) {
+    const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
+    suffix =
+      pickString(opt, ["id", "option_id"]) ??
+      (h ? pickString(h, ["hotel_id"]) : undefined) ??
+      randomSortableSuffix();
+    hotelOptionSortableSuffix.set(opt, suffix);
+  }
+  return `hotel-${legIndex}-${hotelIndex}-${suffix}`;
+}
 
 function isObject(value: unknown): value is UnknownRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -190,6 +248,186 @@ function hotelSummaryParts(summary: UnknownRecord, itineraryCurrency?: string): 
   return undefined;
 }
 
+function parseFiniteAmount(s: string): number | undefined {
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function formatSummaryAmount(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toFixed(2);
+}
+
+function getNightsFromStay(stay: UnknownRecord): number | undefined {
+  const cin = asIsoDate(stay.check_in) ?? asIsoDate(pickString(stay, ["check_in", "checkIn"]));
+  const cout = asIsoDate(stay.check_out) ?? asIsoDate(pickString(stay, ["check_out", "checkOut"]));
+  if (!cin || !cout) return undefined;
+  const d0 = new Date(`${cin}T12:00:00`);
+  const d1 = new Date(`${cout}T12:00:00`);
+  const ms = d1.getTime() - d0.getTime();
+  const days = Math.round(ms / (24 * 3600 * 1000));
+  return days > 0 ? days : undefined;
+}
+
+function getFlightOptionItineraryAmount(opt: UnknownRecord): number | undefined {
+  const price = pickRecord(opt, ["price"]);
+  if (!price) return undefined;
+  const v = pickScalar(price, [
+    "grandTotal_itinerary_currency",
+    "total_itinerary_currency",
+    "base_itinerary_currency",
+  ]);
+  if (v) return parseFiniteAmount(v);
+  return undefined;
+}
+
+/** First fare option if present; else price on the flight record (single-offer shape). */
+function getFlightLegContribution(flight: UnknownRecord): number | undefined {
+  const options = pickArray(flight, ["options"]) ?? [];
+  const objs = options.filter(isObject) as UnknownRecord[];
+  const first = objs.length > 0 ? objs[0] : undefined;
+  if (first) {
+    const fromOpt = getFlightOptionItineraryAmount(first);
+    if (fromOpt != null) return fromOpt;
+  }
+  const price = pickRecord(flight, ["price"]);
+  if (price) {
+    const v = pickScalar(price, [
+      "grandTotal_itinerary_currency",
+      "total_itinerary_currency",
+      "base_itinerary_currency",
+    ]);
+    if (v) return parseFiniteAmount(v);
+  }
+  return undefined;
+}
+
+function getHotelOptionItineraryTotal(opt: UnknownRecord, parentStay: UnknownRecord): number | undefined {
+  const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
+  if (r) {
+    const total = pickScalar(r, [
+      "total_itinerary_currency",
+      "total_stay_itinerary_currency",
+      "grand_total_itinerary_currency",
+    ]);
+    if (total) return parseFiniteAmount(total);
+    const pn = pickScalar(r, ["price_per_night_itinerary_currency"]);
+    const nights = getNightsFromStay(parentStay);
+    const pnAmt = pn ? parseFiniteAmount(pn) : undefined;
+    if (pnAmt != null && nights != null) return pnAmt * nights;
+  }
+  const offers = pickArray(opt, ["offers"]) ?? [];
+  const first = offers.find(isObject) as UnknownRecord | undefined;
+  const price = first ? pickRecord(first, ["price"]) : undefined;
+  if (price) {
+    const v = pickScalar(price, [
+      "total_itinerary_currency",
+      "grandTotal_itinerary_currency",
+      "total_itinerary_currency",
+    ]);
+    if (v) return parseFiniteAmount(v);
+  }
+  return undefined;
+}
+
+function getHotelLegContribution(stay: UnknownRecord): number | undefined {
+  const options = pickArray(stay, ["options"]) ?? [];
+  const objs = options.filter(isObject) as UnknownRecord[];
+  const first = objs.length > 0 ? objs[0] : undefined;
+  if (first) return getHotelOptionItineraryTotal(first, stay);
+  return undefined;
+}
+
+function recomputeSummaryTotalsFromRanked(ranked: UnknownRecord): void {
+  const summary = pickRecord(ranked, ["summary"]);
+  if (!summary) return;
+
+  const legs = getLegsFromRanked(ranked);
+  let flightsSum = 0;
+  let flightsContributions = 0;
+  let hotelsSum = 0;
+  let hotelsContributions = 0;
+
+  for (const leg of legs) {
+    if (!isObject(leg)) continue;
+    const flights = pickArray(leg, ["flights"]) ?? [];
+    for (const f of flights) {
+      if (!isObject(f)) continue;
+      const amt = getFlightLegContribution(f);
+      if (amt != null) {
+        flightsSum += amt;
+        flightsContributions++;
+      }
+    }
+    const hotels = pickArray(leg, ["hotels"]) ?? [];
+    for (const h of hotels) {
+      if (!isObject(h)) continue;
+      const amt = getHotelLegContribution(h);
+      if (amt != null) {
+        hotelsSum += amt;
+        hotelsContributions++;
+      }
+    }
+  }
+
+  if (flightsContributions > 0) {
+    summary.total_flights_cost_itinerary_currency = formatSummaryAmount(flightsSum);
+  }
+  if (hotelsContributions > 0) {
+    summary.total_hotels_cost_itinerary_currency = formatSummaryAmount(hotelsSum);
+  }
+}
+
+function applyFlightOptionsReorder(
+  ranked: UnknownRecord,
+  legIndex: number,
+  flightIndex: number,
+  newOptions: unknown[]
+): void {
+  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  if (legs && legs.length > 0) {
+    const leg = legs[legIndex];
+    if (isObject(leg)) {
+      const flights = pickArray(leg, ["flights"]) ?? [];
+      const target = flights[flightIndex];
+      if (isObject(target)) {
+        (target as UnknownRecord).options = newOptions;
+      }
+    }
+    return;
+  }
+  const flights = pickArray(ranked, ["flights"]) ?? [];
+  const target = flights[flightIndex];
+  if (isObject(target)) {
+    (target as UnknownRecord).options = newOptions;
+  }
+}
+
+function applyHotelOptionsReorder(
+  ranked: UnknownRecord,
+  legIndex: number,
+  hotelIndex: number,
+  newOptions: unknown[]
+): void {
+  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  if (legs && legs.length > 0) {
+    const leg = legs[legIndex];
+    if (isObject(leg)) {
+      const hotels = pickArray(leg, ["hotels"]) ?? [];
+      const target = hotels[hotelIndex];
+      if (isObject(target)) {
+        (target as UnknownRecord).options = newOptions;
+      }
+    }
+    return;
+  }
+  const hotels = pickArray(ranked, ["hotels"]) ?? [];
+  const target = hotels[hotelIndex];
+  if (isObject(target)) {
+    (target as UnknownRecord).options = newOptions;
+  }
+}
+
 /** Rounds total minutes and formats as hours + minutes (e.g. 1030 → "17h 10m", 45 → "45m"). */
 function formatDurationMinutesAsHoursMinutes(totalMinutes: number): string {
   if (!Number.isFinite(totalMinutes) || totalMinutes < 0) return "";
@@ -330,10 +568,9 @@ function formatFlightEndpointDisplay(record: UnknownRecord, side: "departure" | 
   const options = pickArray(record, ["options"]);
   if (options?.length) {
     const candidates = options.filter(isObject) as UnknownRecord[];
-    const ranked =
-      bestByRankingScore(candidates) ?? (candidates.length > 0 ? candidates[0] : undefined);
-    if (ranked) {
-      const fromOption = formatFlightEndpointFromAmadeusItineraries(ranked, side);
+    const first = candidates.length > 0 ? candidates[0] : undefined;
+    if (first) {
+      const fromOption = formatFlightEndpointFromAmadeusItineraries(first, side);
       if (fromOption) return fromOption;
     }
   }
@@ -398,18 +635,6 @@ function formatFlightEndpointDisplay(record: UnknownRecord, side: "departure" | 
   return undefined;
 }
 
-function bestByRankingScore(options: unknown[]): UnknownRecord | undefined {
-  const candidates = options.filter(isObject);
-  if (candidates.length === 0) return undefined;
-  return candidates
-    .map((o) => {
-      const ranking = isObject(o._ranking) ? (o._ranking as UnknownRecord) : undefined;
-      const score = ranking ? pickNumber(ranking, ["score"]) ?? -Infinity : -Infinity;
-      return { o, score };
-    })
-    .sort((a, b) => b.score - a.score)[0]?.o;
-}
-
 /** Segments from Amadeus itineraries or a top-level `segments` array. */
 function collectSegmentsFromRecord(record: UnknownRecord): UnknownRecord[] {
   const fromItin = collectAmadeusSegmentsInOrder(record);
@@ -418,12 +643,13 @@ function collectSegmentsFromRecord(record: UnknownRecord): UnknownRecord[] {
   return direct.filter(isObject) as UnknownRecord[];
 }
 
-/** Prefer best-ranked option when it carries segment data; else the flight record. */
+/** Prefer first option when it carries segment data; else the flight record. */
 function gatherSegmentsForFlight(flight: UnknownRecord): UnknownRecord[] {
   const options = pickArray(flight, ["options"]) ?? [];
-  const best = bestByRankingScore(options);
+  const objs = options.filter(isObject) as UnknownRecord[];
+  const first = objs.length > 0 ? objs[0] : undefined;
   const candidates: UnknownRecord[] = [];
-  if (best) candidates.push(best);
+  if (first) candidates.push(first);
   candidates.push(flight);
   for (const c of candidates) {
     const segs = collectSegmentsFromRecord(c);
@@ -478,20 +704,6 @@ function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): stri
   if (!arr || !dep || dep.getTime() <= arr.getTime()) return null;
   const mins = Math.round((dep.getTime() - arr.getTime()) / 60000);
   return formatDurationMinutesAsHoursMinutes(mins);
-}
-
-function getLegPriceParts(
-  flight: UnknownRecord,
-  best: UnknownRecord | undefined,
-  itineraryCurrency?: string,
-): DualPriceParts | undefined {
-  const fromRecord = (rec: UnknownRecord | undefined) => {
-    if (!rec) return undefined;
-    const p = pickRecord(rec, ["price"]);
-    if (!p) return undefined;
-    return formatAmadeusDualPriceParts(p, itineraryCurrency);
-  };
-  return fromRecord(best) ?? fromRecord(flight);
 }
 
 /** Prefer explicit `legs`; otherwise one synthetic leg from top-level flights + hotels. */
@@ -565,7 +777,6 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const legPriceParts = getLegPriceParts(opt, undefined, itineraryCurrency);
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -598,24 +809,6 @@ function FlightOptionBox({
           aria-labelledby={`${detailId}-summary`}
           className="border-t border-border bg-background/25 px-3 py-3"
         >
-          <div className="mb-3 flex items-start justify-between gap-2">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
-              <p className="text-sm font-semibold text-foreground">
-                {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : "—"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDetailsOpen(false);
-              }}
-              className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground transition-colors"
-            >
-              Collapse
-            </button>
-          </div>
           <FlightSegmentDetailList flight={parentFlight} segmentsFrom={opt} />
         </div>
       )}
@@ -665,6 +858,150 @@ function HotelOptionBox({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function SortableOptionRow({
+  id,
+  ariaLabel,
+  children,
+}: {
+  id: string;
+  ariaLabel: string;
+  children: ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    transition: null,
+  });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? "opacity-60" : undefined}>
+      <div className="flex items-start gap-1">
+        <button
+          type="button"
+          className="mt-1.5 shrink-0 inline-flex h-8 w-6 items-center justify-center rounded text-muted hover:bg-surface-hover hover:text-foreground cursor-grab active:cursor-grabbing touch-none"
+          aria-label={ariaLabel}
+          {...listeners}
+          {...attributes}
+        >
+          <span aria-hidden className="select-none text-sm leading-none">
+            ⋮⋮
+          </span>
+        </button>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function SortableFlightOptionsList({
+  flight,
+  flightIndex,
+  legIndex,
+  parentFlightIndex,
+  objectOptions,
+  onReorder,
+}: {
+  flight: UnknownRecord;
+  flightIndex: number;
+  legIndex: number;
+  parentFlightIndex: number;
+  objectOptions: UnknownRecord[];
+  onReorder: (newOrder: UnknownRecord[]) => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const sortableIds = useMemo(
+    () => objectOptions.map((opt) => getFlightOptionSortableId(opt, legIndex, flightIndex)),
+    [objectOptions, legIndex, flightIndex]
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortableIds.indexOf(String(active.id));
+    const newIndex = sortableIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    onReorder(arrayMove(objectOptions, oldIndex, newIndex));
+  };
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          {objectOptions.map((opt, i) => (
+            <SortableOptionRow
+              key={sortableIds[i]}
+              id={sortableIds[i]}
+              ariaLabel="Drag to reorder fare option"
+            >
+              <FlightOptionBox
+                opt={opt}
+                optionIndex={i}
+                parentFlight={flight}
+                parentFlightIndex={parentFlightIndex}
+              />
+            </SortableOptionRow>
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableHotelOptionsList({
+  stay,
+  hotelIndex,
+  legIndex,
+  objectOptions,
+  onReorder,
+}: {
+  stay: UnknownRecord;
+  hotelIndex: number;
+  legIndex: number;
+  objectOptions: UnknownRecord[];
+  onReorder: (newOrder: UnknownRecord[]) => void;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+  const sortableIds = useMemo(
+    () => objectOptions.map((opt) => getHotelOptionSortableId(opt, legIndex, hotelIndex)),
+    [objectOptions, legIndex, hotelIndex]
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sortableIds.indexOf(String(active.id));
+    const newIndex = sortableIds.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
+    onReorder(arrayMove(objectOptions, oldIndex, newIndex));
+  };
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+      <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+        <div className="space-y-2">
+          {objectOptions.map((opt, i) => (
+            <SortableOptionRow
+              key={sortableIds[i]}
+              id={sortableIds[i]}
+              ariaLabel="Drag to reorder hotel option"
+            >
+              <HotelOptionBox opt={opt} optionIndex={i} parentStay={stay} />
+            </SortableOptionRow>
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
   );
 }
 
@@ -752,27 +1089,25 @@ function FlightSegmentDetailList({
   );
 }
 
-function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: number }) {
-  const itineraryCurrency = useItineraryCurrency();
+function FlightRow({
+  flight,
+  labelIndex,
+  legIndex,
+  onOptionsReorder,
+}: {
+  flight: UnknownRecord;
+  labelIndex: number;
+  legIndex: number;
+  onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
+}) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const from = pickString(flight, ["from"]);
   const to = pickString(flight, ["to"]);
-  const depart = formatFlightEndpointDisplay(flight, "departure");
-  const arrive = formatFlightEndpointDisplay(flight, "arrival");
   const options = pickArray(flight, ["options"]) ?? [];
-  const best = bestByRankingScore(options);
-  const legPriceParts = getLegPriceParts(flight, best, itineraryCurrency);
-  const durationMinutes =
-    best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"]) : undefined;
-  const stops =
-    best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["stops"]) : undefined;
+  const objectOptions = options.filter(isObject) as UnknownRecord[];
 
   const title = [from, to].filter(Boolean).join(" → ") || `Flight ${labelIndex + 1}`;
-
-  const moreFlightOptions = options
-    .map((raw, i) => ({ raw, i }))
-    .filter(({ raw }) => isObject(raw))
-    .filter(({ raw }) => !best || (raw as UnknownRecord) !== best);
+  const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   return (
     <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
@@ -790,27 +1125,12 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
           {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
             <p className="text-sm font-medium text-foreground">{title}</p>
-            <p className="text-xs text-muted shrink-0">{[depart, arrive].filter(Boolean).join(" → ")}</p>
+            {objectOptions.length > 1 ? (
+              <p className="text-xs text-muted shrink-0">{objectOptions.length} fare options</p>
+            ) : null}
           </div>
-          {(legPriceParts || durationMinutes != null || stops != null) && (
-            <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-              {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : null}
-              {durationMinutes != null ? (
-                <>
-                  {legPriceParts ? <span className="text-muted">·</span> : null}
-                  <span>{formatDurationMinutesAsHoursMinutes(durationMinutes)}</span>
-                </>
-              ) : null}
-              {stops != null ? (
-                <>
-                  {(legPriceParts || durationMinutes != null) ? <span className="text-muted">·</span> : null}
-                  <span>{stops} stops</span>
-                </>
-              ) : null}
-            </p>
-          )}
         </div>
       </button>
       {detailsOpen && (
@@ -820,72 +1140,56 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
           aria-labelledby={`flight-summary-${labelIndex}`}
           className={LEG_OPTION_PANEL_CLASS}
         >
-          <div className="mb-3 flex items-start justify-between gap-2 pl-3">
-            <div>
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
-              <p className="text-sm font-semibold text-foreground">
-                {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : "—"}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setDetailsOpen(false);
-              }}
-              className="shrink-0 rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface-hover hover:text-foreground transition-colors"
-            >
-              Collapse
-            </button>
-          </div>
-          <FlightSegmentDetailList flight={flight} />
-          {options.length > 0 &&
-            (moreFlightOptions.length > 0 ? (
-              <div className="mt-4 space-y-2 border-t border-border/60 pt-3">
-                <p className="pl-3 text-[10px] font-medium uppercase tracking-wide text-muted">Other fare options</p>
-                <div className="space-y-2">
-                  {moreFlightOptions.map(({ raw, i }) => (
-                    <FlightOptionBox
-                      key={i}
-                      opt={raw as UnknownRecord}
-                      optionIndex={i}
-                      parentFlight={flight}
-                      parentFlightIndex={labelIndex}
-                    />
-                  ))}
-                </div>
-              </div>
+          {objectOptions.length > 0 ? (
+            canSortOptions && onOptionsReorder ? (
+              <SortableFlightOptionsList
+                flight={flight}
+                flightIndex={labelIndex}
+                legIndex={legIndex}
+                parentFlightIndex={labelIndex}
+                objectOptions={objectOptions}
+                onReorder={onOptionsReorder}
+              />
             ) : (
-              <p className="mt-4 border-t border-border/60 pt-3 pl-3 text-xs text-muted">
-                {options.filter(isObject).length <= 1
-                  ? "No other fare options."
-                  : "No additional fare options to show."}
-              </p>
-            ))}
+              <div className="space-y-2">
+                {objectOptions.map((opt, i) => (
+                  <FlightOptionBox
+                    key={i}
+                    opt={opt}
+                    optionIndex={i}
+                    parentFlight={flight}
+                    parentFlightIndex={labelIndex}
+                  />
+                ))}
+              </div>
+            )
+          ) : (
+            <FlightSegmentDetailList flight={flight} />
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: number }) {
-  const itineraryCurrency = useItineraryCurrency();
+function HotelRow({
+  stay,
+  labelIndex,
+  legIndex,
+  onOptionsReorder,
+}: {
+  stay: UnknownRecord;
+  labelIndex: number;
+  legIndex: number;
+  onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const checkIn = asIsoDate(stay.check_in);
-  const checkOut = asIsoDate(stay.check_out);
-  const cityCode = pickString(stay, ["city_code"]);
+  const cityCode = pickString(stay, ["city_code", "city"]);
   const options = pickArray(stay, ["options"]) ?? [];
-  const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
-  const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
-  const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
-  const hotelParts = best ? formatHotelDualPriceParts(best, itineraryCurrency) : undefined;
+  const objectOptions = options.filter(isObject) as UnknownRecord[];
 
-  const title = hotelName ?? `Hotel ${labelIndex + 1}`;
-
-  const moreHotelOptions = options
-    .map((raw, i) => ({ raw, i }))
-    .filter(({ raw }) => isObject(raw))
-    .filter(({ raw }) => !best || (raw as UnknownRecord) !== best);
+  const title = cityCode ? `Hotels · ${cityCode}` : `Hotel ${labelIndex + 1}`;
+  const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   return (
     <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
@@ -901,34 +1205,31 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
           {open ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
             <p className="text-sm font-medium text-foreground">{title}</p>
-            <p className="text-xs text-muted shrink-0">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
+            {objectOptions.length > 1 ? (
+              <p className="text-xs text-muted shrink-0">{objectOptions.length} hotel options</p>
+            ) : null}
           </div>
-          {(cityCode || hotelParts) ? (
-            <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-              {cityCode ? <span>{cityCode}</span> : null}
-              {cityCode && hotelParts ? <span className="text-muted">·</span> : null}
-              {hotelParts ? <DualPriceDisplay parts={hotelParts} /> : null}
-            </p>
-          ) : null}
         </div>
       </button>
       {open && (
         <div className={LEG_OPTION_PANEL_CLASS}>
-          {options.length > 0 ? (
-            moreHotelOptions.length > 0 ? (
+          {objectOptions.length > 0 ? (
+            canSortOptions && onOptionsReorder ? (
+              <SortableHotelOptionsList
+                stay={stay}
+                hotelIndex={labelIndex}
+                legIndex={legIndex}
+                objectOptions={objectOptions}
+                onReorder={onOptionsReorder}
+              />
+            ) : (
               <div className="space-y-2">
-                {moreHotelOptions.map(({ raw, i }) => (
-                  <HotelOptionBox key={i} opt={raw as UnknownRecord} optionIndex={i} parentStay={stay} />
+                {objectOptions.map((opt, i) => (
+                  <HotelOptionBox key={i} opt={opt} optionIndex={i} parentStay={stay} />
                 ))}
               </div>
-            ) : (
-              <p className="pl-3 text-xs text-muted">
-                {options.filter(isObject).length <= 1
-                  ? "No other hotel options."
-                  : "No additional hotel options to show."}
-              </p>
             )
           ) : (
             <p className="pl-3 text-xs text-muted">No hotel options listed.</p>
@@ -939,7 +1240,15 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
   );
 }
 
-function LegFlightsBlock({ flights }: { flights: unknown[] }) {
+function LegFlightsBlock({
+  flights,
+  legIndex,
+  onReorderFlightOptions,
+}: {
+  flights: unknown[];
+  legIndex: number;
+  onReorderFlightOptions?: (flightIndex: number, newOptions: unknown[]) => void;
+}) {
   const list = flights.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
 
@@ -950,14 +1259,32 @@ function LegFlightsBlock({ flights }: { flights: unknown[] }) {
       <p className="text-xs font-medium text-muted">Flights</p>
       <div className={listClass}>
         {list.map((flight, idx) => (
-          <FlightRow key={idx} flight={flight} labelIndex={idx} />
+          <FlightRow
+            key={idx}
+            flight={flight}
+            labelIndex={idx}
+            legIndex={legIndex}
+            onOptionsReorder={
+              onReorderFlightOptions
+                ? (newOrder) => onReorderFlightOptions(idx, newOrder)
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function LegHotelsBlock({ hotels }: { hotels: unknown[] }) {
+function LegHotelsBlock({
+  hotels,
+  legIndex,
+  onReorderHotelOptions,
+}: {
+  hotels: unknown[];
+  legIndex: number;
+  onReorderHotelOptions?: (hotelIndex: number, newOptions: unknown[]) => void;
+}) {
   const list = hotels.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
 
@@ -968,7 +1295,17 @@ function LegHotelsBlock({ hotels }: { hotels: unknown[] }) {
       <p className="text-xs font-medium text-muted">Hotels</p>
       <div className={listClass}>
         {list.map((stay, idx) => (
-          <HotelRow key={idx} stay={stay} labelIndex={idx} />
+          <HotelRow
+            key={idx}
+            stay={stay}
+            labelIndex={idx}
+            legIndex={legIndex}
+            onOptionsReorder={
+              onReorderHotelOptions
+                ? (newOrder) => onReorderHotelOptions(idx, newOrder)
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>
@@ -979,13 +1316,33 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   const itineraryIndex = pickNumber(envelope, ["itinerary_index"]);
   const itineraryCount = pickNumber(envelope, ["itinerary_count"]);
 
-  const summary = pickRecord(ranked, ["summary"]);
+  const [rankedState, setRankedState] = useState<UnknownRecord>(() => structuredClone(ranked));
+
+  const reorderFlightOptions = useCallback((legIndex: number, flightIndex: number, newOptions: unknown[]) => {
+    setRankedState((prev) => {
+      const next = structuredClone(prev);
+      applyFlightOptionsReorder(next, legIndex, flightIndex, newOptions);
+      recomputeSummaryTotalsFromRanked(next);
+      return next;
+    });
+  }, []);
+
+  const reorderHotelOptions = useCallback((legIndex: number, hotelIndex: number, newOptions: unknown[]) => {
+    setRankedState((prev) => {
+      const next = structuredClone(prev);
+      applyHotelOptionsReorder(next, legIndex, hotelIndex, newOptions);
+      recomputeSummaryTotalsFromRanked(next);
+      return next;
+    });
+  }, []);
+
+  const summary = pickRecord(rankedState, ["summary"]);
   const totalDays = summary ? pickNumber(summary, ["total_duration_days"]) : undefined;
   const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
   const flightsSummaryParts = summary ? flightSummaryParts(summary, itineraryCurrency) : undefined;
   const hotelsSummaryParts = summary ? hotelSummaryParts(summary, itineraryCurrency) : undefined;
 
-  const legs = getLegsFromRanked(ranked);
+  const legs = getLegsFromRanked(rankedState);
   const legsWithContent = legs.filter((leg) => {
     const f = pickArray(leg, ["flights"]) ?? [];
     const h = pickArray(leg, ["hotels"]) ?? [];
@@ -1055,8 +1412,20 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
                   </div>
                 )}
                 <div className="space-y-4">
-                  <LegFlightsBlock flights={legFlights} />
-                  <LegHotelsBlock hotels={legHotels} />
+                  <LegFlightsBlock
+                    flights={legFlights}
+                    legIndex={legIdx}
+                    onReorderFlightOptions={(flightIndex, newOptions) =>
+                      reorderFlightOptions(legIdx, flightIndex, newOptions)
+                    }
+                  />
+                  <LegHotelsBlock
+                    hotels={legHotels}
+                    legIndex={legIdx}
+                    onReorderHotelOptions={(hotelIndex, newOptions) =>
+                      reorderHotelOptions(legIdx, hotelIndex, newOptions)
+                    }
+                  />
                 </div>
               </div>
             );
