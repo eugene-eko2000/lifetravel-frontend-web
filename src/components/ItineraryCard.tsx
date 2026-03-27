@@ -1,6 +1,12 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, createContext, useContext, useState } from "react";
+
+const ItineraryCurrencyContext = createContext<string | undefined>(undefined);
+
+function useItineraryCurrency(): string | undefined {
+  return useContext(ItineraryCurrencyContext);
+}
 
 type UnknownRecord = Record<string, unknown>;
 /** Inset for expanded options so card text lines up with row header (p-3 + chevron w-4 + gap-2). */
@@ -57,6 +63,55 @@ function pickNumber(obj: UnknownRecord, keys: string[]): number | undefined {
     if (typeof v === "number" && Number.isFinite(v)) return v;
   }
   return undefined;
+}
+
+/** String or number amounts (Amadeus often uses string decimals). */
+function pickScalar(obj: UnknownRecord, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+/**
+ * Display price using itinerary currency + *_itinerary_currency amounts when `itineraryCurrency` is set;
+ * otherwise billing currency + total/grandTotal.
+ */
+function formatAmadeusPriceDisplay(price: UnknownRecord, itineraryCurrency?: string): string | undefined {
+  if (itineraryCurrency) {
+    const amt = pickScalar(price, [
+      "grandTotal_itinerary_currency",
+      "total_itinerary_currency",
+      "base_itinerary_currency",
+    ]);
+    if (amt) return `${itineraryCurrency} ${amt}`;
+  }
+  const c = pickString(price, ["currency"]);
+  const t = pickScalar(price, ["grandTotal", "total"]);
+  if (c && t) return `${c} ${t}`;
+  return undefined;
+}
+
+function formatHotelPricePerNightLine(opt: UnknownRecord, itineraryCurrency?: string): string | undefined {
+  const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
+  if (itineraryCurrency) {
+    const fromRanking = r ? pickScalar(r, ["price_per_night_itinerary_currency"]) : undefined;
+    if (fromRanking) return `${itineraryCurrency} ${fromRanking}/night`;
+    const offers = pickArray(opt, ["offers"]) ?? [];
+    const first = offers.find(isObject) as UnknownRecord | undefined;
+    const price = first ? pickRecord(first, ["price"]) : undefined;
+    const variations = price ? pickRecord(price, ["variations"]) : undefined;
+    const average = variations ? pickRecord(variations, ["average"]) : undefined;
+    const perNight = average
+      ? pickScalar(average, ["total_itinerary_currency", "base_itinerary_currency"])
+      : undefined;
+    if (perNight) return `${itineraryCurrency} ${perNight}/night`;
+  }
+  const num = r ? pickNumber(r, ["price_per_night"]) : undefined;
+  if (num == null) return undefined;
+  return `${num}/night`;
 }
 
 /** Rounds total minutes and formats as hours + minutes (e.g. 1030 → "17h 10m", 45 → "45m"). */
@@ -349,14 +404,16 @@ function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): stri
   return formatDurationMinutesAsHoursMinutes(mins);
 }
 
-function formatLegPrice(flight: UnknownRecord, best: UnknownRecord | undefined): string | undefined {
+function formatLegPrice(
+  flight: UnknownRecord,
+  best: UnknownRecord | undefined,
+  itineraryCurrency?: string,
+): string | undefined {
   const fromRecord = (rec: UnknownRecord | undefined) => {
     if (!rec) return undefined;
     const p = pickRecord(rec, ["price"]);
     if (!p) return undefined;
-    const c = pickString(p, ["currency"]);
-    const t = pickString(p, ["total", "grandTotal"]);
-    return c && t ? `${c} ${t}` : undefined;
+    return formatAmadeusPriceDisplay(p, itineraryCurrency);
   };
   return fromRecord(best) ?? fromRecord(flight);
 }
@@ -373,15 +430,14 @@ function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
   return [{ flights, hotels } as UnknownRecord];
 }
 
-function summarizeFlightOption(opt: UnknownRecord): string {
+function summarizeFlightOption(opt: UnknownRecord, itineraryCurrency?: string): string {
   const price = isObject(opt.price) ? (opt.price as UnknownRecord) : undefined;
-  const currency = price ? pickString(price, ["currency"]) : undefined;
-  const total = price ? pickString(price, ["total", "grandTotal"]) : undefined;
+  const priceLine = price ? formatAmadeusPriceDisplay(price, itineraryCurrency) : undefined;
   const ranking = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
   const durationMinutes = ranking ? pickNumber(ranking, ["duration_minutes"]) : undefined;
   const stops = ranking ? pickNumber(ranking, ["stops"]) : undefined;
   return [
-    currency && total ? `${currency} ${total}` : null,
+    priceLine,
     durationMinutes != null ? formatDurationMinutesAsHoursMinutes(durationMinutes) : null,
     stops != null ? `${stops} stops` : null,
   ]
@@ -401,6 +457,7 @@ function FlightOptionBox({
   parentFlight: UnknownRecord;
   parentFlightIndex: number;
 }) {
+  const itineraryCurrency = useItineraryCurrency();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const from =
     pickString(opt, ["from", "origin", "departure_city"]) ?? pickString(parentFlight, ["from", "origin"]);
@@ -420,8 +477,8 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const detailLine = summarizeFlightOption(opt);
-  const legPriceDisplay = formatLegPrice(opt, undefined);
+  const detailLine = summarizeFlightOption(opt, itineraryCurrency);
+  const legPriceDisplay = formatLegPrice(opt, undefined, itineraryCurrency);
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -487,14 +544,14 @@ function HotelOptionBox({
   optionIndex: number;
   parentStay: UnknownRecord;
 }) {
+  const itineraryCurrency = useItineraryCurrency();
   const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
   const name = h ? pickString(h, ["name", "chain", "brand"]) : undefined;
   const parentCity = pickString(parentStay, ["city_code", "city"]);
   const title = name ?? parentCity ?? `Hotel ${optionIndex + 1}`;
 
   const cityCode = h ? pickString(h, ["city_code", "city"]) : undefined;
-  const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
-  const pricePerNight = r ? pickNumber(r, ["price_per_night"]) : undefined;
+  const pricePerNightLine = formatHotelPricePerNightLine(opt, itineraryCurrency);
 
   const checkInOpt = h ? asIsoDate(pickString(h, ["check_in", "checkIn"])) : undefined;
   const checkOutOpt = h ? asIsoDate(pickString(h, ["check_out", "checkOut"])) : undefined;
@@ -503,7 +560,7 @@ function HotelOptionBox({
   const dateRight = [checkInOpt ?? checkInParent, checkOutOpt ?? checkOutParent].filter(Boolean).join(" → ");
 
   const secondLineCity = cityCode ?? parentCity;
-  const secondLine = [secondLineCity, pricePerNight != null ? `${pricePerNight}/night` : null].filter(Boolean).join(" • ");
+  const secondLine = [secondLineCity, pricePerNightLine].filter(Boolean).join(" • ");
 
   return (
     <div className="rounded-lg border border-border/80 bg-background/40 p-3">
@@ -601,6 +658,7 @@ function FlightSegmentDetailList({
 }
 
 function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: number }) {
+  const itineraryCurrency = useItineraryCurrency();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const from = pickString(flight, ["from"]);
   const to = pickString(flight, ["to"]);
@@ -608,7 +666,7 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
   const arrive = formatFlightEndpointDisplay(flight, "arrival");
   const options = pickArray(flight, ["options"]) ?? [];
   const best = bestByRankingScore(options);
-  const legPriceDisplay = formatLegPrice(flight, best);
+  const legPriceDisplay = formatLegPrice(flight, best, itineraryCurrency);
   const durationMinutes =
     best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"]) : undefined;
   const stops =
@@ -704,6 +762,7 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
 }
 
 function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: number }) {
+  const itineraryCurrency = useItineraryCurrency();
   const [open, setOpen] = useState(false);
   const checkIn = asIsoDate(stay.check_in);
   const checkOut = asIsoDate(stay.check_out);
@@ -712,8 +771,7 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
   const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
   const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
   const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
-  const ranking = best && isObject(best._ranking) ? (best._ranking as UnknownRecord) : undefined;
-  const pricePerNight = ranking ? pickNumber(ranking, ["price_per_night"]) : undefined;
+  const pricePerNightLine = best ? formatHotelPricePerNightLine(best, itineraryCurrency) : undefined;
 
   const title = hotelName ?? `Hotel ${labelIndex + 1}`;
 
@@ -741,7 +799,7 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
             <p className="text-xs text-muted shrink-0">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
           </div>
           <p className="mt-1 text-xs text-muted">
-            {[cityCode, pricePerNight != null ? `${pricePerNight}/night` : null].filter(Boolean).join(" • ")}
+            {[cityCode, pricePerNightLine].filter(Boolean).join(" • ")}
           </p>
         </div>
       </button>
@@ -812,10 +870,17 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
 
   const summary = pickRecord(ranked, ["summary"]);
   const totalDays = summary ? pickNumber(summary, ["total_duration_days"]) : undefined;
-  const flightsCost = summary ? pickNumber(summary, ["total_flights_cost"]) : undefined;
+  const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
+  const flightsCost = summary
+    ? pickScalar(summary, ["total_flights_cost_itinerary_currency", "total_flights_cost"])
+    : undefined;
+  const hotelsCost = summary
+    ? pickScalar(summary, ["total_hotels_cost_itinerary_currency", "total_hotels_cost"])
+    : undefined;
   const flightsCurrency = summary ? pickString(summary, ["flights_currency"]) : undefined;
-  const hotelsCost = summary ? pickNumber(summary, ["total_hotels_cost"]) : undefined;
   const hotelsCurrency = summary ? pickString(summary, ["hotels_currency"]) : undefined;
+  const flightsLabel = itineraryCurrency ?? flightsCurrency;
+  const hotelsLabel = itineraryCurrency ?? hotelsCurrency;
 
   const legs = getLegsFromRanked(ranked);
   const legsWithContent = legs.filter((leg) => {
@@ -825,42 +890,43 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   });
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">
-            Itinerary
-            {typeof itineraryIndex === "number" && typeof itineraryCount === "number"
-              ? ` • ${itineraryIndex + 1}/${itineraryCount}`
-              : ""}
-          </p>
-        </div>
-      </div>
-
-      {(totalDays != null || flightsCost != null || hotelsCost != null) && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          <div className="rounded-lg border border-border bg-background/40 p-2">
-            <p className="text-[10px] text-muted">Duration</p>
-            <p className="text-sm font-medium text-foreground">
-              {totalDays != null ? `${totalDays} days` : "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-background/40 p-2">
-            <p className="text-[10px] text-muted">Flights</p>
-            <p className="text-sm font-medium text-foreground">
-              {flightsCost != null && flightsCurrency ? `${flightsCurrency} ${flightsCost}` : "—"}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-background/40 p-2">
-            <p className="text-[10px] text-muted">Hotels</p>
-            <p className="text-sm font-medium text-foreground">
-              {hotelsCost != null && hotelsCurrency ? `${hotelsCurrency} ${hotelsCost}` : "—"}
+    <ItineraryCurrencyContext.Provider value={itineraryCurrency}>
+      <div className="rounded-xl border border-border bg-surface p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-foreground">
+              Itinerary
+              {typeof itineraryIndex === "number" && typeof itineraryCount === "number"
+                ? ` • ${itineraryIndex + 1}/${itineraryCount}`
+                : ""}
             </p>
           </div>
         </div>
-      )}
 
-      {legsWithContent.length > 0 && (
+        {(totalDays != null || flightsCost != null || hotelsCost != null) && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="rounded-lg border border-border bg-background/40 p-2">
+              <p className="text-[10px] text-muted">Duration</p>
+              <p className="text-sm font-medium text-foreground">
+                {totalDays != null ? `${totalDays} days` : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/40 p-2">
+              <p className="text-[10px] text-muted">Flights</p>
+              <p className="text-sm font-medium text-foreground">
+                {flightsCost != null && flightsLabel ? `${flightsLabel} ${flightsCost}` : "—"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-border bg-background/40 p-2">
+              <p className="text-[10px] text-muted">Hotels</p>
+              <p className="text-sm font-medium text-foreground">
+                {hotelsCost != null && hotelsLabel ? `${hotelsLabel} ${hotelsCost}` : "—"}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {legsWithContent.length > 0 && (
         <div className="mt-4 space-y-4">
           {legsWithContent.map((leg, legIdx) => {
             const legFlights = pickArray(leg, ["flights"]) ?? [];
@@ -893,8 +959,9 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
             );
           })}
         </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ItineraryCurrencyContext.Provider>
   );
 }
 
