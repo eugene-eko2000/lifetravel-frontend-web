@@ -8,6 +8,7 @@ import {
   useMemo,
   type FormEvent,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { JsonViewer } from "@/components/JsonViewer";
 import { ItineraryCard, looksLikeItinerary } from "@/components/ItineraryCard";
@@ -88,48 +89,77 @@ function AssistantMessageBlocks({
   const hiddenItineraryCount = Math.max(0, itineraryCount - visibleItineraryCount);
   const canShowMore = hiddenItineraryCount > 0;
 
+  const renderJsonBlock = (i: number): ReactNode => {
+    const block = blocks[i];
+    if (block.type !== "json") return null;
+    if (looksLikeItinerary(block.data) && !visibleItineraryBlockIndices.has(i)) {
+      return null;
+    }
+    return (
+      <div
+        key={i}
+        className="min-w-0 rounded-lg border border-border bg-background/50 overflow-x-auto"
+      >
+        {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
+          <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
+            <button
+              type="button"
+              onClick={() => copyJsonToClipboard(block.data, `${message.id}-${i}`)}
+              className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+            >
+              {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
+            </button>
+          </div>
+        )}
+        <div className="p-3">
+          {looksLikeItinerary(block.data) ? (
+            <ItineraryCard data={block.data} />
+          ) : (
+            <JsonViewer data={block.data} defaultExpanded={true} />
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderedBlocks: ReactNode[] = [];
+  let i = 0;
+  while (i < blocks.length) {
+    const b = blocks[i];
+    if (b.type === "json" && looksLikeItinerary(b.data)) {
+      const runStart = i;
+      const runIndices: number[] = [];
+      while (i < blocks.length && blocks[i].type === "json" && looksLikeItinerary(blocks[i].data)) {
+        runIndices.push(i);
+        i++;
+      }
+      renderedBlocks.push(
+        <div
+          key={`itinerary-grid-${runStart}`}
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 min-w-0"
+        >
+          {runIndices.map((idx) => renderJsonBlock(idx))}
+        </div>
+      );
+    } else if (b.type === "json") {
+      renderedBlocks.push(renderJsonBlock(i));
+      i++;
+    } else {
+      renderedBlocks.push(
+        <pre
+          key={i}
+          className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
+        >
+          {b.data}
+        </pre>
+      );
+      i++;
+    }
+  }
+
   return (
     <>
-      {blocks.map((block, i) => {
-        if (block.type === "json" && looksLikeItinerary(block.data) && !visibleItineraryBlockIndices.has(i)) {
-          return null;
-        }
-        if (block.type === "json") {
-          return (
-            <div
-              key={i}
-              className="rounded-lg border border-border bg-background/50 overflow-x-auto"
-            >
-              {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
-                <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
-                  <button
-                    type="button"
-                    onClick={() => copyJsonToClipboard(block.data, `${message.id}-${i}`)}
-                    className="text-xs font-medium text-muted hover:text-foreground transition-colors"
-                  >
-                    {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
-                  </button>
-                </div>
-              )}
-              <div className="p-3">
-                {looksLikeItinerary(block.data) ? (
-                  <ItineraryCard data={block.data} />
-                ) : (
-                  <JsonViewer data={block.data} defaultExpanded={true} />
-                )}
-              </div>
-            </div>
-          );
-        }
-        return (
-          <pre
-            key={i}
-            className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
-          >
-            {block.data}
-          </pre>
-        );
-      })}
+      {renderedBlocks}
       {canShowMore && (
         <div className="flex justify-center pt-2">
           <button

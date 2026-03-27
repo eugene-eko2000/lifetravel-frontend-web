@@ -50,8 +50,9 @@ function randomSortableSuffix(): string {
 function getFlightOptionSortableId(opt: UnknownRecord, legIndex: number, flightIndex: number): string {
   let suffix = flightOptionSortableSuffix.get(opt);
   if (!suffix) {
-    suffix =
-      pickString(opt, ["id", "offer_id", "offerId", "option_id"]) ?? randomSortableSuffix();
+    const explicit = pickString(opt, ["id", "offer_id", "offerId", "option_id"]);
+    // Two options can share the same API id; append a random token so keys stay unique.
+    suffix = explicit ? `${explicit}::${randomSortableSuffix()}` : randomSortableSuffix();
     flightOptionSortableSuffix.set(opt, suffix);
   }
   return `flight-${legIndex}-${flightIndex}-${suffix}`;
@@ -61,10 +62,9 @@ function getHotelOptionSortableId(opt: UnknownRecord, legIndex: number, hotelInd
   let suffix = hotelOptionSortableSuffix.get(opt);
   if (!suffix) {
     const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
-    suffix =
-      pickString(opt, ["id", "option_id"]) ??
-      (h ? pickString(h, ["hotel_id"]) : undefined) ??
-      randomSortableSuffix();
+    const explicit =
+      pickString(opt, ["id", "option_id"]) ?? (h ? pickString(h, ["hotel_id"]) : undefined);
+    suffix = explicit ? `${explicit}::${randomSortableSuffix()}` : randomSortableSuffix();
     hotelOptionSortableSuffix.set(opt, suffix);
   }
   return `hotel-${legIndex}-${hotelIndex}-${suffix}`;
@@ -451,6 +451,32 @@ function asIsoDate(value: unknown): string | undefined {
   return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : undefined;
 }
 
+/** Formats YYYY-MM-DD for itinerary summary (matches flight date-only display style). */
+function formatIsoDateLabel(isoDate: string): string {
+  const parts = isoDate.split("-").map(Number);
+  const y = parts[0];
+  const m = parts[1];
+  const day = parts[2];
+  if (y == null || m == null || day == null) return isoDate;
+  const local = new Date(y, m - 1, day);
+  return local.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/** Start/end from summary when present; otherwise falls back to total duration days. */
+function formatItinerarySummaryDates(
+  startIso: string | undefined,
+  endIso: string | undefined,
+  totalDurationDays: number | undefined
+): string {
+  if (startIso && endIso) {
+    return `${formatIsoDateLabel(startIso)} → ${formatIsoDateLabel(endIso)}`;
+  }
+  if (startIso) return `${formatIsoDateLabel(startIso)} → —`;
+  if (endIso) return `— → ${formatIsoDateLabel(endIso)}`;
+  if (totalDurationDays != null) return `${totalDurationDays} days`;
+  return "—";
+}
+
 function looksLikeDatetimeString(s: string): boolean {
   const t = s.trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(t)) return false;
@@ -496,6 +522,28 @@ function formatFlightDateTime(value: unknown): string | undefined {
   });
 }
 
+/** Same inputs as {@link formatFlightDateTime} but omits times (flight row headers). */
+function formatFlightDateOnly(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const d = new Date(value);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+  }
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const s = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return formatIsoDateLabel(s);
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) {
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+  }
+  return s.length > 48 ? `${s.slice(0, 45)}…` : s;
+}
+
+type FlightEndpointFormatter = (value: unknown) => string | undefined;
+
 function collectStringFields(record: UnknownRecord, keys: string[]): string[] {
   const out: string[] = [];
   for (const k of keys) {
@@ -519,7 +567,11 @@ function normalizeTimeForCombine(t: string): string {
 }
 
 /** Reads nested Amadeus/GDS-style { departure: { at } } / { arrival: { at } }. */
-function formatFlightEndpointFromNestedEndpoint(record: UnknownRecord, side: "departure" | "arrival"): string | undefined {
+function formatFlightEndpointFromNestedEndpoint(
+  record: UnknownRecord,
+  side: "departure" | "arrival",
+  fmt: FlightEndpointFormatter = formatFlightDateTime
+): string | undefined {
   const key = side === "departure" ? "departure" : "arrival";
   const v = record[key];
   if (!isObject(v)) return undefined;
@@ -532,7 +584,7 @@ function formatFlightEndpointFromNestedEndpoint(record: UnknownRecord, side: "de
     "local_date_time",
     "iataDateTime",
   ]);
-  if (nested) return formatFlightDateTime(nested);
+  if (nested) return fmt(nested);
   return undefined;
 }
 
@@ -550,19 +602,28 @@ function collectAmadeusSegmentsInOrder(record: UnknownRecord): UnknownRecord[] {
   return out;
 }
 
-function formatFlightEndpointFromAmadeusItineraries(record: UnknownRecord, side: "departure" | "arrival"): string | undefined {
+function formatFlightEndpointFromAmadeusItineraries(
+  record: UnknownRecord,
+  side: "departure" | "arrival",
+  fmt: FlightEndpointFormatter = formatFlightDateTime
+): string | undefined {
   const segments = collectAmadeusSegmentsInOrder(record);
   if (segments.length === 0) return undefined;
   const seg = side === "departure" ? segments[0] : segments[segments.length - 1];
-  return formatFlightEndpointFromNestedEndpoint(seg, side);
+  return formatFlightEndpointFromNestedEndpoint(seg, side, fmt);
 }
 
 /** Departure or arrival line for a flight or segment option (prefers full datetimes, else date+time fields). */
-function formatFlightEndpointDisplay(record: UnknownRecord, side: "departure" | "arrival"): string | undefined {
-  const nested = formatFlightEndpointFromNestedEndpoint(record, side);
+function formatFlightEndpointDisplay(
+  record: UnknownRecord,
+  side: "departure" | "arrival",
+  omitTime?: boolean
+): string | undefined {
+  const fmt = omitTime ? formatFlightDateOnly : formatFlightDateTime;
+  const nested = formatFlightEndpointFromNestedEndpoint(record, side, fmt);
   if (nested) return nested;
 
-  const fromAmadeus = formatFlightEndpointFromAmadeusItineraries(record, side);
+  const fromAmadeus = formatFlightEndpointFromAmadeusItineraries(record, side, fmt);
   if (fromAmadeus) return fromAmadeus;
 
   const options = pickArray(record, ["options"]);
@@ -570,7 +631,7 @@ function formatFlightEndpointDisplay(record: UnknownRecord, side: "departure" | 
     const candidates = options.filter(isObject) as UnknownRecord[];
     const first = candidates.length > 0 ? candidates[0] : undefined;
     if (first) {
-      const fromOption = formatFlightEndpointFromAmadeusItineraries(first, side);
+      const fromOption = formatFlightEndpointFromAmadeusItineraries(first, side, fmt);
       if (fromOption) return fromOption;
     }
   }
@@ -606,29 +667,29 @@ function formatFlightEndpointDisplay(record: UnknownRecord, side: "departure" | 
 
   const flatAt = collectStringFields(record, atKeys);
   const bestAt = flatAt.find(looksLikeDatetimeString) ?? flatAt[0];
-  if (bestAt) return formatFlightDateTime(bestAt);
+  if (bestAt) return fmt(bestAt);
 
   const datePart = pickBestDateField(record, dateKeys);
   const timeCandidates = collectStringFields(record, timeKeys);
   const timePart = timeCandidates[0];
 
   if (datePart && timePart) {
-    const dateOnly = datePart.split("T")[0] ?? datePart;
-    const combined = `${dateOnly}T${normalizeTimeForCombine(timePart)}`;
-    return formatFlightDateTime(combined);
+    const datePartIso = datePart.split("T")[0] ?? datePart;
+    const combined = `${datePartIso}T${normalizeTimeForCombine(timePart)}`;
+    return fmt(combined);
   }
-  if (datePart) return formatFlightDateTime(datePart);
+  if (datePart) return fmt(datePart);
 
   const ts =
     side === "departure"
       ? pickNumber(record, ["departure_timestamp", "depart_timestamp", "departure_unix"])
       : pickNumber(record, ["arrival_timestamp", "arrive_timestamp", "arrival_unix"]);
-  if (ts != null) return formatFlightDateTime(ts);
+  if (ts != null) return fmt(ts);
 
   const segmentsOnly = pickArray(record, ["segments"]);
   if (segmentsOnly?.length) {
     const wrapped = { itineraries: [{ segments: segmentsOnly }] } as UnknownRecord;
-    const fromSegList = formatFlightEndpointFromAmadeusItineraries(wrapped, side);
+    const fromSegList = formatFlightEndpointFromAmadeusItineraries(wrapped, side, fmt);
     if (fromSegList) return fromSegList;
   }
 
@@ -716,6 +777,21 @@ function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
   const hotels = pickArray(ranked, ["hotels"]) ?? [];
   if (flights.length === 0 && hotels.length === 0) return [];
   return [{ flights, hotels } as UnknownRecord];
+}
+
+/** True if any hotel stay has at least one object in `options`. */
+function rankedItineraryHasHotelOptions(ranked: UnknownRecord): boolean {
+  const legs = getLegsFromRanked(ranked);
+  for (const leg of legs) {
+    if (!isObject(leg)) continue;
+    const hotels = pickArray(leg, ["hotels"]) ?? [];
+    for (const h of hotels) {
+      if (!isObject(h)) continue;
+      const opts = pickArray(h, ["options"]) ?? [];
+      if (opts.some(isObject)) return true;
+    }
+  }
+  return false;
 }
 
 function FlightOptionMetaLine({ opt }: { opt: UnknownRecord }) {
@@ -1109,6 +1185,10 @@ function FlightRow({
   const title = [from, to].filter(Boolean).join(" → ") || `Flight ${labelIndex + 1}`;
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
+  const departSummary = formatFlightEndpointDisplay(flight, "departure", true);
+  const arriveSummary = formatFlightEndpointDisplay(flight, "arrival", true);
+  const dateSummary = [departSummary, arriveSummary].filter(Boolean).join(" → ");
+
   return (
     <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
       <button
@@ -1126,9 +1206,19 @@ function FlightRow({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-            <p className="text-sm font-medium text-foreground">{title}</p>
-            {objectOptions.length > 1 ? (
-              <p className="text-xs text-muted shrink-0">{objectOptions.length} fare options</p>
+            <p className="min-w-0 text-sm text-foreground">
+              <span className="font-medium">{title}</span>
+              {dateSummary ? (
+                <>
+                  <span className="font-medium text-muted"> · </span>
+                  <span className="font-normal text-muted">{dateSummary}</span>
+                </>
+              ) : null}
+            </p>
+            {objectOptions.length > 0 ? (
+              <p className="text-xs text-muted shrink-0">
+                {objectOptions.length === 1 ? "1 fare option" : `${objectOptions.length} fare options`}
+              </p>
             ) : null}
           </div>
         </div>
@@ -1338,9 +1428,19 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
 
   const summary = pickRecord(rankedState, ["summary"]);
   const totalDays = summary ? pickNumber(summary, ["total_duration_days"]) : undefined;
+  const itineraryStartRaw = summary
+    ? pickString(summary, ["itinerary_start_date", "start_date", "startDate"])
+    : undefined;
+  const itineraryEndRaw = summary
+    ? pickString(summary, ["itinerary_end_date", "end_date", "endDate"])
+    : undefined;
+  const itineraryStartIso = itineraryStartRaw ? asIsoDate(itineraryStartRaw) : undefined;
+  const itineraryEndIso = itineraryEndRaw ? asIsoDate(itineraryEndRaw) : undefined;
   const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
   const flightsSummaryParts = summary ? flightSummaryParts(summary, itineraryCurrency) : undefined;
-  const hotelsSummaryParts = summary ? hotelSummaryParts(summary, itineraryCurrency) : undefined;
+  const hasHotelOptionsInData = rankedItineraryHasHotelOptions(rankedState);
+  const hotelsSummaryParts =
+    summary && hasHotelOptionsInData ? hotelSummaryParts(summary, itineraryCurrency) : undefined;
 
   const legs = getLegsFromRanked(rankedState);
   const legsWithContent = legs.filter((leg) => {
@@ -1363,12 +1463,19 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
           </div>
         </div>
 
-        {(totalDays != null || flightsSummaryParts != null || hotelsSummaryParts != null) && (
-          <div className="mt-3 grid grid-cols-3 gap-2">
+        {(itineraryStartIso != null ||
+          itineraryEndIso != null ||
+          totalDays != null ||
+          flightsSummaryParts != null ||
+          hotelsSummaryParts != null ||
+          hasHotelOptionsInData) && (
+          <div
+            className={`mt-3 grid gap-2 ${hasHotelOptionsInData ? "grid-cols-3" : "grid-cols-2"}`}
+          >
             <div className="rounded-lg border border-border bg-background/40 p-2">
-              <p className="text-[10px] text-muted">Duration</p>
+              <p className="text-[10px] text-muted">Dates</p>
               <p className="text-sm font-medium text-foreground">
-                {totalDays != null ? `${totalDays} days` : "—"}
+                {formatItinerarySummaryDates(itineraryStartIso, itineraryEndIso, totalDays)}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-background/40 p-2">
@@ -1377,12 +1484,14 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
                 {flightsSummaryParts ? <DualPriceDisplay parts={flightsSummaryParts} /> : "—"}
               </p>
             </div>
-            <div className="rounded-lg border border-border bg-background/40 p-2">
-              <p className="text-[10px] text-muted">Hotels</p>
-              <p className="text-sm font-medium text-foreground">
-                {hotelsSummaryParts ? <DualPriceDisplay parts={hotelsSummaryParts} /> : "—"}
-              </p>
-            </div>
+            {hasHotelOptionsInData ? (
+              <div className="rounded-lg border border-border bg-background/40 p-2">
+                <p className="text-[10px] text-muted">Hotels</p>
+                <p className="text-sm font-medium text-foreground">
+                  {hotelsSummaryParts ? <DualPriceDisplay parts={hotelsSummaryParts} /> : "—"}
+                </p>
+              </div>
+            ) : null}
           </div>
         )}
 
