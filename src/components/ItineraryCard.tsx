@@ -75,43 +75,119 @@ function pickScalar(obj: UnknownRecord, keys: string[]): string | undefined {
   return undefined;
 }
 
+/** Primary = itinerary; optional original = billing currency from `price.currency`. */
+type DualPriceParts = { primary: string; original?: string };
+
+function DualPriceDisplay({ parts }: { parts: DualPriceParts | undefined }) {
+  if (!parts) return null;
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1">
+      <span>{parts.primary}</span>
+      {parts.original ? (
+        <span className="text-[0.82em] text-muted"> ({parts.original})</span>
+      ) : null}
+    </span>
+  );
+}
+
 /**
- * Display price using itinerary currency + *_itinerary_currency amounts when `itineraryCurrency` is set;
- * otherwise billing currency + total/grandTotal.
+ * Amadeus flight/offer price: itinerary amount first (`704.13 CHF`), then original (`767.01 EUR`) when it differs.
  */
-function formatAmadeusPriceDisplay(price: UnknownRecord, itineraryCurrency?: string): string | undefined {
+function formatAmadeusDualPriceParts(price: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
+  const origCur = pickString(price, ["currency"]);
+  const origAmt = pickScalar(price, ["grandTotal", "total"]);
+  const originalLine = origCur && origAmt ? `${origAmt} ${origCur}` : undefined;
+
   if (itineraryCurrency) {
-    const amt = pickScalar(price, [
+    const itinAmt = pickScalar(price, [
       "grandTotal_itinerary_currency",
       "total_itinerary_currency",
       "base_itinerary_currency",
     ]);
-    if (amt) return `${itineraryCurrency} ${amt}`;
+    if (itinAmt) {
+      const primary = `${itinAmt} ${itineraryCurrency}`;
+      if (originalLine && origCur && origCur !== itineraryCurrency) {
+        return { primary, original: originalLine };
+      }
+      return { primary };
+    }
   }
-  const c = pickString(price, ["currency"]);
-  const t = pickScalar(price, ["grandTotal", "total"]);
-  if (c && t) return `${c} ${t}`;
+  if (originalLine) return { primary: originalLine };
   return undefined;
 }
 
-function formatHotelPricePerNightLine(opt: UnknownRecord, itineraryCurrency?: string): string | undefined {
+function formatHotelDualPriceParts(opt: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
   const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
+  const offers = pickArray(opt, ["offers"]) ?? [];
+  const first = offers.find(isObject) as UnknownRecord | undefined;
+  const price = first ? pickRecord(first, ["price"]) : undefined;
+  const variations = price ? pickRecord(price, ["variations"]) : undefined;
+  const average = variations ? pickRecord(variations, ["average"]) : undefined;
+  const origCur = price ? pickString(price, ["currency"]) : undefined;
+
   if (itineraryCurrency) {
     const fromRanking = r ? pickScalar(r, ["price_per_night_itinerary_currency"]) : undefined;
-    if (fromRanking) return `${itineraryCurrency} ${fromRanking}/night`;
-    const offers = pickArray(opt, ["offers"]) ?? [];
-    const first = offers.find(isObject) as UnknownRecord | undefined;
-    const price = first ? pickRecord(first, ["price"]) : undefined;
-    const variations = price ? pickRecord(price, ["variations"]) : undefined;
-    const average = variations ? pickRecord(variations, ["average"]) : undefined;
-    const perNight = average
-      ? pickScalar(average, ["total_itinerary_currency", "base_itinerary_currency"])
-      : undefined;
-    if (perNight) return `${itineraryCurrency} ${perNight}/night`;
+    if (fromRanking && r) {
+      const primary = `${fromRanking} ${itineraryCurrency}/night`;
+      const origPn = pickNumber(r, ["price_per_night"]);
+      if (origPn != null && origCur && origCur !== itineraryCurrency) {
+        return { primary, original: `${origPn} ${origCur}/night` };
+      }
+      return { primary };
+    }
+    if (average) {
+      const itinPerNight = pickScalar(average, ["total_itinerary_currency", "base_itinerary_currency"]);
+      const origPerNight = pickScalar(average, ["total", "base"]);
+      if (itinPerNight) {
+        const primary = `${itinPerNight} ${itineraryCurrency}/night`;
+        if (origPerNight && origCur && origCur !== itineraryCurrency) {
+          return { primary, original: `${origPerNight} ${origCur}/night` };
+        }
+        return { primary };
+      }
+    }
   }
   const num = r ? pickNumber(r, ["price_per_night"]) : undefined;
   if (num == null) return undefined;
-  return `${num}/night`;
+  return { primary: `${num}/night` };
+}
+
+function flightSummaryParts(summary: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
+  const itinCur = itineraryCurrency;
+  const flightsCur = pickString(summary, ["flights_currency"]);
+  const itinOnly = pickScalar(summary, ["total_flights_cost_itinerary_currency"]);
+  const raw = pickScalar(summary, ["total_flights_cost"]);
+
+  if (itinOnly && itinCur) {
+    const primary = `${itinOnly} ${itinCur}`;
+    if (raw && flightsCur && flightsCur !== itinCur) {
+      return { primary, original: `${raw} ${flightsCur}` };
+    }
+    return { primary };
+  }
+  if (raw && (itinCur ?? flightsCur)) {
+    return { primary: `${raw} ${itinCur ?? flightsCur}` };
+  }
+  return undefined;
+}
+
+function hotelSummaryParts(summary: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
+  const itinCur = itineraryCurrency;
+  const hotelsCur = pickString(summary, ["hotels_currency"]);
+  const itinOnly = pickScalar(summary, ["total_hotels_cost_itinerary_currency"]);
+  const raw = pickScalar(summary, ["total_hotels_cost"]);
+
+  if (itinOnly && itinCur) {
+    const primary = `${itinOnly} ${itinCur}`;
+    if (raw && hotelsCur && hotelsCur !== itinCur) {
+      return { primary, original: `${raw} ${hotelsCur}` };
+    }
+    return { primary };
+  }
+  if (raw && (itinCur ?? hotelsCur)) {
+    return { primary: `${raw} ${itinCur ?? hotelsCur}` };
+  }
+  return undefined;
 }
 
 /** Rounds total minutes and formats as hours + minutes (e.g. 1030 → "17h 10m", 45 → "45m"). */
@@ -404,16 +480,16 @@ function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): stri
   return formatDurationMinutesAsHoursMinutes(mins);
 }
 
-function formatLegPrice(
+function getLegPriceParts(
   flight: UnknownRecord,
   best: UnknownRecord | undefined,
   itineraryCurrency?: string,
-): string | undefined {
+): DualPriceParts | undefined {
   const fromRecord = (rec: UnknownRecord | undefined) => {
     if (!rec) return undefined;
     const p = pickRecord(rec, ["price"]);
     if (!p) return undefined;
-    return formatAmadeusPriceDisplay(p, itineraryCurrency);
+    return formatAmadeusDualPriceParts(p, itineraryCurrency);
   };
   return fromRecord(best) ?? fromRecord(flight);
 }
@@ -430,19 +506,31 @@ function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
   return [{ flights, hotels } as UnknownRecord];
 }
 
-function summarizeFlightOption(opt: UnknownRecord, itineraryCurrency?: string): string {
+function FlightOptionMetaLine({ opt }: { opt: UnknownRecord }) {
+  const itineraryCurrency = useItineraryCurrency();
   const price = isObject(opt.price) ? (opt.price as UnknownRecord) : undefined;
-  const priceLine = price ? formatAmadeusPriceDisplay(price, itineraryCurrency) : undefined;
+  const parts = price ? formatAmadeusDualPriceParts(price, itineraryCurrency) : undefined;
   const ranking = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
   const durationMinutes = ranking ? pickNumber(ranking, ["duration_minutes"]) : undefined;
   const stops = ranking ? pickNumber(ranking, ["stops"]) : undefined;
-  return [
-    priceLine,
-    durationMinutes != null ? formatDurationMinutesAsHoursMinutes(durationMinutes) : null,
-    stops != null ? `${stops} stops` : null,
-  ]
-    .filter(Boolean)
-    .join(" • ");
+  if (parts == null && durationMinutes == null && stops == null) return null;
+  return (
+    <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+      {parts ? <DualPriceDisplay parts={parts} /> : null}
+      {durationMinutes != null ? (
+        <>
+          {parts ? <span className="text-muted">·</span> : null}
+          <span>{formatDurationMinutesAsHoursMinutes(durationMinutes)}</span>
+        </>
+      ) : null}
+      {stops != null ? (
+        <>
+          {(parts || durationMinutes != null) ? <span className="text-muted">·</span> : null}
+          <span>{stops} stops</span>
+        </>
+      ) : null}
+    </p>
+  );
 }
 
 /** First line matches parent flight row: route (from → to) | dates; falls back to parent segment when option omits fields. */
@@ -477,8 +565,7 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const detailLine = summarizeFlightOption(opt, itineraryCurrency);
-  const legPriceDisplay = formatLegPrice(opt, undefined, itineraryCurrency);
+  const legPriceParts = getLegPriceParts(opt, undefined, itineraryCurrency);
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -501,7 +588,7 @@ function FlightOptionBox({
             <p className="text-sm font-medium text-foreground">{title}</p>
             {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
           </div>
-          {detailLine ? <p className="mt-1 text-xs text-muted">{detailLine}</p> : null}
+          <FlightOptionMetaLine opt={opt} />
         </div>
       </button>
       {detailsOpen && (
@@ -514,7 +601,9 @@ function FlightOptionBox({
           <div className="mb-3 flex items-start justify-between gap-2">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
-              <p className="text-sm font-semibold text-foreground">{legPriceDisplay ?? "—"}</p>
+              <p className="text-sm font-semibold text-foreground">
+                {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : "—"}
+              </p>
             </div>
             <button
               type="button"
@@ -551,7 +640,7 @@ function HotelOptionBox({
   const title = name ?? parentCity ?? `Hotel ${optionIndex + 1}`;
 
   const cityCode = h ? pickString(h, ["city_code", "city"]) : undefined;
-  const pricePerNightLine = formatHotelPricePerNightLine(opt, itineraryCurrency);
+  const hotelParts = formatHotelDualPriceParts(opt, itineraryCurrency);
 
   const checkInOpt = h ? asIsoDate(pickString(h, ["check_in", "checkIn"])) : undefined;
   const checkOutOpt = h ? asIsoDate(pickString(h, ["check_out", "checkOut"])) : undefined;
@@ -560,7 +649,7 @@ function HotelOptionBox({
   const dateRight = [checkInOpt ?? checkInParent, checkOutOpt ?? checkOutParent].filter(Boolean).join(" → ");
 
   const secondLineCity = cityCode ?? parentCity;
-  const secondLine = [secondLineCity, pricePerNightLine].filter(Boolean).join(" • ");
+  const hasSecondLine = secondLineCity || hotelParts;
 
   return (
     <div className="rounded-lg border border-border/80 bg-background/40 p-3">
@@ -568,7 +657,13 @@ function HotelOptionBox({
         <p className="text-sm font-medium text-foreground">{title}</p>
         {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
       </div>
-      {secondLine ? <p className="mt-1 text-xs text-muted">{secondLine}</p> : null}
+      {hasSecondLine ? (
+        <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+          {secondLineCity ? <span>{secondLineCity}</span> : null}
+          {secondLineCity && hotelParts ? <span className="text-muted">·</span> : null}
+          {hotelParts ? <DualPriceDisplay parts={hotelParts} /> : null}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -666,7 +761,7 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
   const arrive = formatFlightEndpointDisplay(flight, "arrival");
   const options = pickArray(flight, ["options"]) ?? [];
   const best = bestByRankingScore(options);
-  const legPriceDisplay = formatLegPrice(flight, best, itineraryCurrency);
+  const legPriceParts = getLegPriceParts(flight, best, itineraryCurrency);
   const durationMinutes =
     best && isObject(best._ranking) ? pickNumber(best._ranking as UnknownRecord, ["duration_minutes"]) : undefined;
   const stops =
@@ -699,11 +794,21 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
             <p className="text-sm font-medium text-foreground">{title}</p>
             <p className="text-xs text-muted shrink-0">{[depart, arrive].filter(Boolean).join(" → ")}</p>
           </div>
-          {(legPriceDisplay || durationMinutes != null || stops != null) && (
-            <p className="mt-1 text-xs text-muted">
-              {[legPriceDisplay, durationMinutes != null ? formatDurationMinutesAsHoursMinutes(durationMinutes) : null, stops != null ? `${stops} stops` : null]
-                .filter(Boolean)
-                .join(" • ")}
+          {(legPriceParts || durationMinutes != null || stops != null) && (
+            <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+              {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : null}
+              {durationMinutes != null ? (
+                <>
+                  {legPriceParts ? <span className="text-muted">·</span> : null}
+                  <span>{formatDurationMinutesAsHoursMinutes(durationMinutes)}</span>
+                </>
+              ) : null}
+              {stops != null ? (
+                <>
+                  {(legPriceParts || durationMinutes != null) ? <span className="text-muted">·</span> : null}
+                  <span>{stops} stops</span>
+                </>
+              ) : null}
             </p>
           )}
         </div>
@@ -718,7 +823,9 @@ function FlightRow({ flight, labelIndex }: { flight: UnknownRecord; labelIndex: 
           <div className="mb-3 flex items-start justify-between gap-2 pl-3">
             <div>
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted">Leg price</p>
-              <p className="text-sm font-semibold text-foreground">{legPriceDisplay ?? "—"}</p>
+              <p className="text-sm font-semibold text-foreground">
+                {legPriceParts ? <DualPriceDisplay parts={legPriceParts} /> : "—"}
+              </p>
             </div>
             <button
               type="button"
@@ -771,7 +878,7 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
   const best = bestByRankingScore(options) ?? (options.find(isObject) as UnknownRecord | undefined);
   const hotel = best && isObject(best.hotel) ? (best.hotel as UnknownRecord) : undefined;
   const hotelName = hotel ? pickString(hotel, ["name"]) : undefined;
-  const pricePerNightLine = best ? formatHotelPricePerNightLine(best, itineraryCurrency) : undefined;
+  const hotelParts = best ? formatHotelDualPriceParts(best, itineraryCurrency) : undefined;
 
   const title = hotelName ?? `Hotel ${labelIndex + 1}`;
 
@@ -798,9 +905,13 @@ function HotelRow({ stay, labelIndex }: { stay: UnknownRecord; labelIndex: numbe
             <p className="text-sm font-medium text-foreground">{title}</p>
             <p className="text-xs text-muted shrink-0">{[checkIn, checkOut].filter(Boolean).join(" → ")}</p>
           </div>
-          <p className="mt-1 text-xs text-muted">
-            {[cityCode, pricePerNightLine].filter(Boolean).join(" • ")}
-          </p>
+          {(cityCode || hotelParts) ? (
+            <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+              {cityCode ? <span>{cityCode}</span> : null}
+              {cityCode && hotelParts ? <span className="text-muted">·</span> : null}
+              {hotelParts ? <DualPriceDisplay parts={hotelParts} /> : null}
+            </p>
+          ) : null}
         </div>
       </button>
       {open && (
@@ -871,16 +982,8 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   const summary = pickRecord(ranked, ["summary"]);
   const totalDays = summary ? pickNumber(summary, ["total_duration_days"]) : undefined;
   const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
-  const flightsCost = summary
-    ? pickScalar(summary, ["total_flights_cost_itinerary_currency", "total_flights_cost"])
-    : undefined;
-  const hotelsCost = summary
-    ? pickScalar(summary, ["total_hotels_cost_itinerary_currency", "total_hotels_cost"])
-    : undefined;
-  const flightsCurrency = summary ? pickString(summary, ["flights_currency"]) : undefined;
-  const hotelsCurrency = summary ? pickString(summary, ["hotels_currency"]) : undefined;
-  const flightsLabel = itineraryCurrency ?? flightsCurrency;
-  const hotelsLabel = itineraryCurrency ?? hotelsCurrency;
+  const flightsSummaryParts = summary ? flightSummaryParts(summary, itineraryCurrency) : undefined;
+  const hotelsSummaryParts = summary ? hotelSummaryParts(summary, itineraryCurrency) : undefined;
 
   const legs = getLegsFromRanked(ranked);
   const legsWithContent = legs.filter((leg) => {
@@ -903,7 +1006,7 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
           </div>
         </div>
 
-        {(totalDays != null || flightsCost != null || hotelsCost != null) && (
+        {(totalDays != null || flightsSummaryParts != null || hotelsSummaryParts != null) && (
           <div className="mt-3 grid grid-cols-3 gap-2">
             <div className="rounded-lg border border-border bg-background/40 p-2">
               <p className="text-[10px] text-muted">Duration</p>
@@ -914,13 +1017,13 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
             <div className="rounded-lg border border-border bg-background/40 p-2">
               <p className="text-[10px] text-muted">Flights</p>
               <p className="text-sm font-medium text-foreground">
-                {flightsCost != null && flightsLabel ? `${flightsLabel} ${flightsCost}` : "—"}
+                {flightsSummaryParts ? <DualPriceDisplay parts={flightsSummaryParts} /> : "—"}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-background/40 p-2">
               <p className="text-[10px] text-muted">Hotels</p>
               <p className="text-sm font-medium text-foreground">
-                {hotelsCost != null && hotelsLabel ? `${hotelsLabel} ${hotelsCost}` : "—"}
+                {hotelsSummaryParts ? <DualPriceDisplay parts={hotelsSummaryParts} /> : "—"}
               </p>
             </div>
           </div>
