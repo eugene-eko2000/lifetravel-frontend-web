@@ -538,9 +538,7 @@ export default function Home() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`mb-6 flex ${
-                      message.role === "user" ? "justify-end" : "justify-start"
-                    }`}
+                    className="mb-6 flex justify-start"
                   >
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 ${
@@ -551,8 +549,8 @@ export default function Home() {
                     >
                       <div className="text-sm leading-relaxed space-y-3">
                         {message.role === "user" && (
-                          <div>
-                            <div className="mb-1 flex items-center justify-end">
+                          <div className="text-left">
+                            <div className="mb-1 flex items-center justify-start">
                               <button
                                 type="button"
                                 onClick={() => copyPromptToClipboard(message.content, message.id)}
@@ -674,7 +672,7 @@ export default function Home() {
             onKeyDown={handleKeyDown}
             placeholder="Message LifeTravel..."
             rows={1}
-            className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent text-sm text-foreground placeholder-muted outline-none"
+            className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent text-left text-sm text-foreground placeholder-muted outline-none"
             disabled={isConnecting}
           />
           <button
@@ -690,7 +688,7 @@ export default function Home() {
             />
           </button>
         </form>
-        <p className="mt-2 text-center text-xs text-muted">
+        <p className="mx-auto mt-2 max-w-3xl text-left text-xs text-muted">
           Press Enter to send, Shift+Enter for a new line
         </p>
       </footer>
