@@ -568,13 +568,15 @@ export default function Home() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className="mb-6 flex justify-start"
+                    className={`mb-6 flex ${
+                      message.role === "assistant" ? "justify-center" : "justify-start"
+                    }`}
                   >
                     <div
-                      className={`max-w-[85%] rounded-2xl px-4 py-3 ${
+                      className={`rounded-2xl px-4 py-3 ${
                         message.role === "user"
-                          ? "bg-user-bubble text-foreground"
-                          : "bg-assistant-bubble text-foreground"
+                          ? "max-w-[85%] bg-user-bubble text-foreground"
+                          : "w-full max-w-[95%] bg-assistant-bubble text-foreground"
                       }`}
                     >
                       <div className="text-sm leading-relaxed space-y-3">
