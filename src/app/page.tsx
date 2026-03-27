@@ -228,7 +228,7 @@ export default function Home() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
-  const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(true);
+  const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
   const lastLeftPaneWidthPercentRef = useRef(leftPaneWidthPercent);
   /** Sentinel for optional scroll anchoring; not used for auto-scroll on itinerary updates. */
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -530,7 +530,7 @@ export default function Home() {
                   </svg>
                 </div>
                 <p className="text-center text-lg text-muted">
-                  How can I help you today?
+                  Hi, I&apos;m your personal travel assistant.
                 </p>
               </div>
             ) : (
@@ -670,7 +670,7 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message LifeTravel..."
+            placeholder="Please describe in a free form your travel plan..."
             rows={1}
             className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent text-left text-sm text-foreground placeholder-muted outline-none"
             disabled={isConnecting}
