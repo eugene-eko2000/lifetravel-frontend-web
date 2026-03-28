@@ -10,6 +10,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 import { JsonViewer } from "@/components/JsonViewer";
 import { ItineraryCard, looksLikeItinerary } from "@/components/ItineraryCard";
 
@@ -50,6 +51,98 @@ const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080"
 
 const ITINERARY_PAGE_SIZE = 10;
 
+const ITINERARY_MODAL_COPY_KEY = "itinerary-modal";
+
+function ItineraryModal({
+  data,
+  mountKey,
+  onClose,
+  isDebugPanelOpen,
+  copyJsonToClipboard,
+  copiedBlockKey,
+}: {
+  data: unknown;
+  mountKey: number;
+  onClose: () => void;
+  isDebugPanelOpen: boolean;
+  copyJsonToClipboard: (data: unknown, blockKey: string) => void;
+  copiedBlockKey: string | null;
+}) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
+      role="presentation"
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="itinerary-modal-title"
+        className="relative flex max-h-[min(90vh,900px)] w-full max-w-[min(95vw,96rem)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 pr-12">
+          <h2 id="itinerary-modal-title" className="text-sm font-semibold text-foreground">
+            Itinerary
+          </h2>
+          {isDebugPanelOpen && (
+            <button
+              type="button"
+              onClick={() => copyJsonToClipboard(data, ITINERARY_MODAL_COPY_KEY)}
+              className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+            >
+              {copiedBlockKey === ITINERARY_MODAL_COPY_KEY ? "Copied!" : "Copy"}
+            </button>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute right-3 top-[6px] z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-foreground shadow-sm transition-colors hover:bg-surface-hover"
+          aria-label="Close"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            className="h-4 w-4"
+            aria-hidden
+          >
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </button>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ItineraryCard key={mountKey} data={data} />
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function AssistantMessageBlocks({
   message,
   copiedBlockKey,
@@ -57,6 +150,7 @@ function AssistantMessageBlocks({
   isConnecting,
   isStreaming,
   isDebugPanelOpen,
+  onOpenItineraryModal,
 }: {
   message: Message;
   copiedBlockKey: string | null;
@@ -64,6 +158,7 @@ function AssistantMessageBlocks({
   isConnecting: boolean;
   isStreaming: boolean;
   isDebugPanelOpen: boolean;
+  onOpenItineraryModal: (data: unknown) => void;
 }) {
   const blocks = message.blocks ?? [];
   const itineraryIndices = useMemo(() => {
@@ -95,28 +190,55 @@ function AssistantMessageBlocks({
     if (looksLikeItinerary(block.data) && !visibleItineraryBlockIndices.has(i)) {
       return null;
     }
+    const isItin = looksLikeItinerary(block.data);
+    const copyBar =
+      (!isItin || isDebugPanelOpen) && (
+        <div
+          className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5"
+          onClick={isItin ? (e) => e.stopPropagation() : undefined}
+        >
+          <button
+            type="button"
+            onClick={() => copyJsonToClipboard(block.data, `${message.id}-${i}`)}
+            className="text-xs font-medium text-muted hover:text-foreground transition-colors"
+          >
+            {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
+          </button>
+        </div>
+      );
+
+    if (isItin) {
+      return (
+        <div
+          key={i}
+          role="button"
+          tabIndex={0}
+          onClick={() => onOpenItineraryModal(block.data)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onOpenItineraryModal(block.data);
+            }
+          }}
+          className="min-w-0 cursor-pointer rounded-lg border border-border bg-background/50 text-left overflow-x-auto outline-none transition-colors hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-border"
+          aria-label="Open itinerary in modal"
+        >
+          {copyBar}
+          <div className="pointer-events-none p-3">
+            <ItineraryCard data={block.data} />
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         key={i}
         className="min-w-0 rounded-lg border border-border bg-background/50 overflow-x-auto"
       >
-        {(!looksLikeItinerary(block.data) || isDebugPanelOpen) && (
-          <div className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5">
-            <button
-              type="button"
-              onClick={() => copyJsonToClipboard(block.data, `${message.id}-${i}`)}
-              className="text-xs font-medium text-muted hover:text-foreground transition-colors"
-            >
-              {copiedBlockKey === `${message.id}-${i}` ? "Copied!" : "Copy"}
-            </button>
-          </div>
-        )}
+        {copyBar}
         <div className="p-3">
-          {looksLikeItinerary(block.data) ? (
-            <ItineraryCard data={block.data} />
-          ) : (
-            <JsonViewer data={block.data} defaultExpanded={true} />
-          )}
+          <JsonViewer data={block.data} defaultExpanded={true} />
         </div>
       </div>
     );
@@ -269,6 +391,16 @@ export default function Home() {
   const isResizingRef = useRef(false);
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const [itineraryModal, setItineraryModal] = useState<{ data: unknown; mountKey: number } | null>(
+    null
+  );
+
+  const openItineraryModal = useCallback((data: unknown) => {
+    setItineraryModal((prev) => ({
+      data,
+      mountKey: (prev?.mountKey ?? 0) + 1,
+    }));
+  }, []);
 
   const copyJsonToClipboard = useCallback((data: unknown, blockKey: string) => {
     const text = JSON.stringify(data, null, 2);
@@ -582,7 +714,7 @@ export default function Home() {
                       <div className="text-sm leading-relaxed space-y-3">
                         {message.role === "user" && (
                           <div className="text-left">
-                            <div className="mb-1 flex items-center justify-start">
+                            <div className="mb-1 flex items-center justify-end">
                               <button
                                 type="button"
                                 onClick={() => copyPromptToClipboard(message.content, message.id)}
@@ -602,6 +734,7 @@ export default function Home() {
                             isConnecting={isConnecting}
                             isStreaming={isStreaming}
                             isDebugPanelOpen={isDebugPanelOpen}
+                            onOpenItineraryModal={openItineraryModal}
                           />
                         )}
                         {message.role === "assistant" &&
@@ -724,6 +857,17 @@ export default function Home() {
           Press Enter to send, Shift+Enter for a new line
         </p>
       </footer>
+
+      {itineraryModal != null && (
+        <ItineraryModal
+          data={itineraryModal.data}
+          mountKey={itineraryModal.mountKey}
+          onClose={() => setItineraryModal(null)}
+          isDebugPanelOpen={isDebugPanelOpen}
+          copyJsonToClipboard={copyJsonToClipboard}
+          copiedBlockKey={copiedBlockKey}
+        />
+      )}
     </div>
   );
 }
