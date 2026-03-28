@@ -750,6 +750,102 @@ function formatSegmentCarrier(seg: UnknownRecord): string {
   return pickString(seg, ["flightNumber"]) ?? "Flight";
 }
 
+/** Amadeus segment id for matching `fareDetailsBySegment.segmentId`. */
+function getSegmentIdForFareMatching(seg: UnknownRecord): string | undefined {
+  return pickString(seg, ["id", "segmentId"]);
+}
+
+function toTitleCaseWords(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .split(/[\s_]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+function formatCabinClassLabel(cabin: unknown): string | undefined {
+  if (typeof cabin !== "string" || !cabin.trim()) return undefined;
+  return toTitleCaseWords(cabin);
+}
+
+function pickNonNegativeInt(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) return Math.floor(value);
+  if (typeof value === "string" && /^\d+$/.test(value.trim())) return parseInt(value.trim(), 10);
+  return undefined;
+}
+
+/**
+ * Checked/cabin bags: when weight (+ unit) is present → `{n} x {weight}{unit}` (per-bag weight).
+ * Quantity defaults to 1 if omitted. Without weight → `{n} bag(s)` from quantity only.
+ */
+function formatFareBagsLine(bags: unknown): string | undefined {
+  if (bags == null) return undefined;
+  if (!isObject(bags)) return undefined;
+  const w = bags.weight ?? bags.maximumWeight ?? bags.maxWeight;
+  const weightStr =
+    typeof w === "number" && Number.isFinite(w)
+      ? String(w)
+      : typeof w === "string" && w.trim()
+        ? w.trim()
+        : pickScalar(bags, ["weight", "maximumWeight", "maxWeight"]);
+  if (weightStr) {
+    const unit = (pickString(bags, ["weightUnit", "unit"]) ?? "kg").toLowerCase();
+    const qty = pickNonNegativeInt(bags.quantity) ?? 1;
+    return `${qty} x ${weightStr}${unit}`;
+  }
+  const qty = pickNonNegativeInt(bags.quantity);
+  if (qty != null) return `${qty} bag${qty === 1 ? "" : "s"}`;
+  return undefined;
+}
+
+/** First traveler with non-empty fareDetailsBySegment (typical: ADULT). */
+function getFirstTravelerFareDetailsBySegment(offerLike: UnknownRecord): UnknownRecord[] {
+  const tps = pickArray(offerLike, ["travelerPricings"]) ?? [];
+  for (const tp of tps) {
+    if (!isObject(tp)) continue;
+    const fds = pickArray(tp, ["fareDetailsBySegment"]) ?? [];
+    const objs = fds.filter(isObject) as UnknownRecord[];
+    if (objs.length > 0) return objs;
+  }
+  return [];
+}
+
+function buildFareDetailBySegmentId(fareDetails: UnknownRecord[]): Map<string, UnknownRecord> {
+  const map = new Map<string, UnknownRecord>();
+  for (const fd of fareDetails) {
+    const sid = pickString(fd, ["segmentId", "segment_id"]);
+    if (sid) map.set(sid, fd);
+  }
+  return map;
+}
+
+function resolveFareDetailForSegment(
+  seg: UnknownRecord,
+  segmentIndex: number,
+  fareDetailsInOrder: UnknownRecord[],
+  byId: Map<string, UnknownRecord>
+): UnknownRecord | undefined {
+  const segId = getSegmentIdForFareMatching(seg);
+  if (segId) {
+    const hit = byId.get(segId);
+    if (hit) return hit;
+  }
+  if (segmentIndex >= 0 && segmentIndex < fareDetailsInOrder.length) {
+    return fareDetailsInOrder[segmentIndex];
+  }
+  return undefined;
+}
+
+/** Amadeus-style fare detail: checked/cabin bags field names vary slightly across payloads. */
+function pickFareBagsField(fd: UnknownRecord, kind: "checked" | "cabin"): unknown {
+  if (kind === "checked") {
+    return fd.includedCheckedBags ?? fd.checkedBags;
+  }
+  return fd.includedCabinBags ?? fd.cabinBags;
+}
+
 function parseAtFromSegment(seg: UnknownRecord, side: "departure" | "arrival"): Date | null {
   const ep = getSegmentEndpoint(seg, side);
   if (!ep) return null;
@@ -1110,12 +1206,28 @@ function FlightSegmentConnectionRow({ prev, next }: { prev: UnknownRecord; next:
   );
 }
 
-function FlightSegmentCard({ seg, index, total }: { seg: UnknownRecord; index: number; total: number }) {
+function FlightSegmentCard({
+  seg,
+  index,
+  total,
+  fareDetail,
+}: {
+  seg: UnknownRecord;
+  index: number;
+  total: number;
+  fareDetail?: UnknownRecord;
+}) {
   const dep = formatFlightEndpointFromNestedEndpoint(seg, "departure");
   const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
   const carrier = formatSegmentCarrier(seg);
   const depLoc = formatAirportLine(seg, "departure");
   const arrLoc = formatAirportLine(seg, "arrival");
+
+  const cabinLabel = fareDetail ? formatCabinClassLabel(fareDetail.cabin) : undefined;
+  const checkedBags = fareDetail ? formatFareBagsLine(pickFareBagsField(fareDetail, "checked")) : undefined;
+  const cabinBags = fareDetail ? formatFareBagsLine(pickFareBagsField(fareDetail, "cabin")) : undefined;
+  const hasFareExtras = Boolean(cabinLabel || checkedBags || cabinBags);
+
   return (
     <div className="rounded-md border border-border/50 bg-background/30 p-3">
       <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
@@ -1134,6 +1246,28 @@ function FlightSegmentCard({ seg, index, total }: { seg: UnknownRecord; index: n
           <dd className="mt-0.5 text-foreground">{arrLoc}</dd>
           <dd className="text-muted">{arr ?? "—"}</dd>
         </div>
+        {hasFareExtras ? (
+          <>
+            {cabinLabel ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Cabin class</dt>
+                <dd className="mt-0.5 text-foreground">{cabinLabel}</dd>
+              </div>
+            ) : null}
+            {checkedBags ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Checked bags</dt>
+                <dd className="mt-0.5 text-foreground">{checkedBags}</dd>
+              </div>
+            ) : null}
+            {cabinBags ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Cabin bags</dt>
+                <dd className="mt-0.5 text-foreground">{cabinBags}</dd>
+              </div>
+            ) : null}
+          </>
+        ) : null}
       </dl>
     </div>
   );
@@ -1150,6 +1284,11 @@ function FlightSegmentDetailList({
   const segments =
     segmentsFrom !== undefined ? collectSegmentsFromRecord(segmentsFrom) : gatherSegmentsForFlight(flight);
   const fallbackRecord = segmentsFrom ?? flight;
+  /** Cabin/bags usually live on the offer option (`travelerPricings`); fall back to parent flight. */
+  const fareSource = segmentsFrom ?? flight;
+  const fareDetailsInOrder = getFirstTravelerFareDetailsBySegment(fareSource);
+  const fareById = buildFareDetailBySegmentId(fareDetailsInOrder);
+
   if (segments.length === 0) {
     return <FlightSegmentFallback flight={fallbackRecord} />;
   }
@@ -1157,7 +1296,12 @@ function FlightSegmentDetailList({
     <div className="space-y-2">
       {segments.map((seg, i) => (
         <Fragment key={i}>
-          <FlightSegmentCard seg={seg} index={i} total={segments.length} />
+          <FlightSegmentCard
+            seg={seg}
+            index={i}
+            total={segments.length}
+            fareDetail={resolveFareDetailForSegment(seg, i, fareDetailsInOrder, fareById)}
+          />
           {i < segments.length - 1 ? <FlightSegmentConnectionRow prev={segments[i]} next={segments[i + 1]} /> : null}
         </Fragment>
       ))}
