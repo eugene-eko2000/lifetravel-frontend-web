@@ -988,47 +988,309 @@ function FlightOptionBox({
   );
 }
 
+/** First Amadeus offer in a hotel-offers option, or the option itself when it already is an offer-shaped record. */
+function getPrimaryHotelOffer(opt: UnknownRecord): UnknownRecord | undefined {
+  const offers = pickArray(opt, ["offers"]) ?? [];
+  const first = offers.find(isObject) as UnknownRecord | undefined;
+  if (first) return first;
+  if (
+    pickString(opt, ["checkInDate", "checkOutDate"]) ||
+    pickRecord(opt, ["room"]) ||
+    pickRecord(opt, ["policies"])
+  ) {
+    return opt;
+  }
+  return undefined;
+}
+
+function formatCategoryOrCodeLabel(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  return toTitleCaseWords(value.replace(/_/g, " "));
+}
+
+function getRoomDescriptionText(room: UnknownRecord | undefined, roomInfo: UnknownRecord | undefined): string | undefined {
+  const dRoom = room ? pickRecord(room, ["description"]) : undefined;
+  const tFromRoom = dRoom ? pickString(dRoom, ["text"]) : undefined;
+  const tFromInfo = roomInfo ? pickString(roomInfo, ["description"]) : undefined;
+  const a = tFromRoom?.trim() ?? "";
+  const b = tFromInfo?.trim() ?? "";
+  const best = a.length >= b.length ? a : b;
+  return best.length > 0 ? best : undefined;
+}
+
+function HotelStayDetailsPanel({ offer }: { offer: UnknownRecord }) {
+  const room = pickRecord(offer, ["room"]);
+  const roomInfo = pickRecord(offer, ["roomInformation"]);
+  const typeEst = room ? pickRecord(room, ["typeEstimated"]) : undefined;
+  const typeEstRi = roomInfo ? pickRecord(roomInfo, ["typeEstimated"]) : undefined;
+  const category = formatCategoryOrCodeLabel(typeEst?.category ?? typeEstRi?.category);
+  const roomTypeCode = pickString(room ?? {}, ["type"]) ?? pickString(roomInfo ?? {}, ["type"]);
+  const bedType = formatCategoryOrCodeLabel(typeEst?.bedType ?? typeEstRi?.bedType);
+  const beds =
+    typeof typeEst?.beds === "number" && Number.isFinite(typeEst.beds)
+      ? typeEst.beds
+      : typeof typeEstRi?.beds === "number" && Number.isFinite(typeEstRi.beds)
+        ? typeEstRi.beds
+        : undefined;
+
+  const amenities = getRoomDescriptionText(room, roomInfo);
+
+  const policies = pickRecord(offer, ["policies"]);
+  const paymentType = policies ? pickString(policies, ["paymentType"]) : undefined;
+  const refundable = policies ? pickRecord(policies, ["refundable"]) : undefined;
+  const refundLabel = refundable ? pickString(refundable, ["cancellationRefund"]) : undefined;
+  const cancellations = policies ? (pickArray(policies, ["cancellations"]) ?? []).filter(isObject) : [];
+  const prepay = policies ? pickRecord(policies, ["prepay"]) : undefined;
+  const prepayDeadline = prepay ? pickString(prepay, ["deadline"]) : undefined;
+  const accepted = prepay ? pickRecord(prepay, ["acceptedPayments"]) : undefined;
+  const ccList = accepted ? (pickArray(accepted, ["creditCards"]) ?? []).filter((x) => typeof x === "string") : [];
+  const payMethods = accepted ? (pickArray(accepted, ["methods"]) ?? []).filter((x) => typeof x === "string") : [];
+
+  const rateCode = pickString(offer, ["rateCode"]);
+  const rateFamily = pickRecord(offer, ["rateFamilyEstimated"]);
+  const rateFamilyCode = rateFamily ? pickString(rateFamily, ["code"]) : undefined;
+  const commission = pickRecord(offer, ["commission"]);
+  const commissionPct = commission ? pickScalar(commission, ["percentage"]) : undefined;
+  const guests = pickRecord(offer, ["guests"]);
+  const adults = guests ? pickNumber(guests, ["adults"]) : undefined;
+
+  const roomTypeLine = (() => {
+    if (category && roomTypeCode && roomTypeCode !== category) return `${category} (${roomTypeCode})`;
+    if (category) return category;
+    if (roomTypeCode) return roomTypeCode;
+    return "";
+  })();
+  const bedsLine =
+    beds != null && bedType
+      ? `${beds} ${bedType.toLowerCase()} bed${beds === 1 ? "" : "s"}`
+      : beds != null
+        ? `${beds} bed${beds === 1 ? "" : "s"}`
+        : bedType ?? undefined;
+
+  const hasRoomBlock = Boolean(roomTypeLine || bedsLine || amenities);
+  const hasPolicyBlock = Boolean(
+    paymentType ||
+      refundLabel ||
+      cancellations.length > 0 ||
+      prepayDeadline ||
+      ccList.length > 0 ||
+      payMethods.length > 0
+  );
+  const hasMetaBlock = Boolean(
+    rateCode || rateFamilyCode || commissionPct != null || adults != null
+  );
+
+  if (!hasRoomBlock && !hasPolicyBlock && !hasMetaBlock) {
+    return <p className="text-xs text-muted">No room or policy details in this offer.</p>;
+  }
+
+  return (
+    <div className="space-y-4 text-xs">
+      {hasMetaBlock ? (
+        <dl className="space-y-2">
+          {rateCode ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Rate</dt>
+              <dd className="mt-0.5 text-foreground">
+                {rateCode}
+                {rateFamilyCode && rateFamilyCode !== rateCode ? ` · ${rateFamilyCode}` : null}
+              </dd>
+            </div>
+          ) : null}
+          {commissionPct != null ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Commission</dt>
+              <dd className="mt-0.5 text-foreground">{commissionPct}%</dd>
+            </div>
+          ) : null}
+          {adults != null ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Guests</dt>
+              <dd className="mt-0.5 text-foreground">
+                {adults} adult{adults === 1 ? "" : "s"}
+              </dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
+
+      {hasRoomBlock ? (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Room</p>
+          <dl className="mt-2 space-y-2">
+            {roomTypeLine ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Room type</dt>
+                <dd className="mt-0.5 text-foreground">{roomTypeLine}</dd>
+              </div>
+            ) : null}
+            {bedsLine ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Beds</dt>
+                <dd className="mt-0.5 text-foreground">{bedsLine}</dd>
+              </div>
+            ) : null}
+            {amenities ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Room amenities</dt>
+                <dd className="mt-0.5 whitespace-pre-wrap text-foreground">{amenities}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+      ) : null}
+
+      {hasPolicyBlock ? (
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-muted">Policies</p>
+          <dl className="mt-2 space-y-2">
+            {paymentType ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Payment</dt>
+                <dd className="mt-0.5 text-foreground">{formatCategoryOrCodeLabel(paymentType) ?? paymentType}</dd>
+              </div>
+            ) : null}
+            {refundLabel ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Refundability</dt>
+                <dd className="mt-0.5 text-foreground">
+                  {formatCategoryOrCodeLabel(refundLabel.replace(/_/g, " ")) ?? refundLabel}
+                </dd>
+              </div>
+            ) : null}
+            {cancellations.map((c, i) => {
+              const rec = c as UnknownRecord;
+              const rawDeadline = pickString(rec, ["deadline"]);
+              const deadline = rawDeadline ? formatFlightDateTime(rawDeadline) : undefined;
+              const nights = pickNumber(rec, ["numberOfNights"]);
+              const pType = pickString(rec, ["policyType"]);
+              const parts = [
+                pType ? formatCategoryOrCodeLabel(pType.replace(/_/g, " ")) : null,
+                nights != null ? `${nights} night${nights === 1 ? "" : "s"} penalty window` : null,
+                deadline ? `by ${deadline}` : null,
+              ].filter(Boolean);
+              return (
+                <div key={i}>
+                  <dt className="text-[10px] font-medium uppercase text-muted">
+                    {cancellations.length > 1 ? `Cancellation ${i + 1}` : "Cancellation"}
+                  </dt>
+                  <dd className="mt-0.5 text-foreground">{parts.length > 0 ? parts.join(" · ") : "—"}</dd>
+                </div>
+              );
+            })}
+            {prepayDeadline ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Prepay deadline</dt>
+                <dd className="mt-0.5 text-foreground">{formatFlightDateTime(prepayDeadline) ?? prepayDeadline}</dd>
+              </div>
+            ) : null}
+            {payMethods.length > 0 ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Payment methods</dt>
+                <dd className="mt-0.5 text-foreground">{payMethods.join(", ")}</dd>
+              </div>
+            ) : null}
+            {ccList.length > 0 ? (
+              <div>
+                <dt className="text-[10px] font-medium uppercase text-muted">Cards accepted</dt>
+                <dd className="mt-0.5 text-foreground">{ccList.join(", ")}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** First line matches parent hotel row: hotel name | stay dates; uses parent stay when option omits fields. */
 function HotelOptionBox({
   opt,
   optionIndex,
   parentStay,
+  parentHotelIndex,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentStay: UnknownRecord;
+  parentHotelIndex: number;
 }) {
   const itineraryCurrency = useItineraryCurrency();
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
   const name = h ? pickString(h, ["name", "chain", "brand"]) : undefined;
   const parentCity = pickString(parentStay, ["city_code", "city"]);
   const title = name ?? parentCity ?? `Hotel ${optionIndex + 1}`;
 
-  const cityCode = h ? pickString(h, ["city_code", "city"]) : undefined;
+  const cityCode = h ? pickString(h, ["city_code", "cityCode", "city"]) : undefined;
   const hotelParts = formatHotelDualPriceParts(opt, itineraryCurrency);
 
+  const offer = getPrimaryHotelOffer(opt);
+  const checkInOffer = offer ? asIsoDate(pickString(offer, ["checkInDate", "check_in"])) : undefined;
+  const checkOutOffer = offer ? asIsoDate(pickString(offer, ["checkOutDate", "check_out"])) : undefined;
   const checkInOpt = h ? asIsoDate(pickString(h, ["check_in", "checkIn"])) : undefined;
   const checkOutOpt = h ? asIsoDate(pickString(h, ["check_out", "checkOut"])) : undefined;
   const checkInParent = asIsoDate(parentStay.check_in);
   const checkOutParent = asIsoDate(parentStay.check_out);
-  const dateRight = [checkInOpt ?? checkInParent, checkOutOpt ?? checkOutParent].filter(Boolean).join(" → ");
+  const dateRight = [checkInOffer ?? checkInOpt ?? checkInParent, checkOutOffer ?? checkOutOpt ?? checkOutParent]
+    .filter(Boolean)
+    .join(" → ");
 
   const secondLineCity = cityCode ?? parentCity;
   const hasSecondLine = secondLineCity || hotelParts;
 
+  const detailId = `hotel-${parentHotelIndex}-opt-${optionIndex}`;
+  const showDetailsPanel = offer != null;
+
   return (
-    <div className="rounded-lg border border-border/80 bg-background/40 p-3">
-      <div className="flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
-      </div>
-      {hasSecondLine ? (
-        <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
-          {secondLineCity ? <span>{secondLineCity}</span> : null}
-          {secondLineCity && hotelParts ? <span className="text-muted">·</span> : null}
-          {hotelParts ? <DualPriceDisplay parts={hotelParts} /> : null}
-        </p>
-      ) : null}
+    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+      <button
+        type="button"
+        onClick={() => setDetailsOpen((v) => !v)}
+        aria-expanded={detailsOpen}
+        aria-controls={showDetailsPanel ? detailId : undefined}
+        id={`${detailId}-summary`}
+        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+          detailsOpen ? "rounded-t-lg" : "rounded-lg"
+        }`}
+      >
+        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
+          {detailsOpen ? "▼" : "▶"}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-sm font-medium text-foreground">{title}</p>
+            {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
+          </div>
+          {hasSecondLine ? (
+            <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+              {secondLineCity ? <span>{secondLineCity}</span> : null}
+              {secondLineCity && hotelParts ? <span className="text-muted">·</span> : null}
+              {hotelParts ? <DualPriceDisplay parts={hotelParts} /> : null}
+            </p>
+          ) : null}
+        </div>
+      </button>
+      {detailsOpen && showDetailsPanel && (
+        <div
+          id={detailId}
+          role="region"
+          aria-labelledby={`${detailId}-summary`}
+          className="border-t border-border bg-background/25 px-3 py-3"
+        >
+          <HotelStayDetailsPanel offer={offer} />
+        </div>
+      )}
+      {detailsOpen && !showDetailsPanel && (
+        <div
+          id={detailId}
+          role="region"
+          aria-labelledby={`${detailId}-summary`}
+          className="border-t border-border bg-background/25 px-3 py-3"
+        >
+          <p className="text-xs text-muted">No offer details available for this stay.</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -1168,7 +1430,7 @@ function SortableHotelOptionsList({
               id={sortableIds[i]}
               ariaLabel="Drag to reorder hotel option"
             >
-              <HotelOptionBox opt={opt} optionIndex={i} parentStay={stay} />
+              <HotelOptionBox opt={opt} optionIndex={i} parentStay={stay} parentHotelIndex={hotelIndex} />
             </SortableOptionRow>
           ))}
         </div>
@@ -1461,7 +1723,7 @@ function HotelRow({
             ) : (
               <div className="space-y-2">
                 {objectOptions.map((opt, i) => (
-                  <HotelOptionBox key={i} opt={opt} optionIndex={i} parentStay={stay} />
+                  <HotelOptionBox key={i} opt={opt} optionIndex={i} parentStay={stay} parentHotelIndex={labelIndex} />
                 ))}
               </div>
             )
