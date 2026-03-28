@@ -277,44 +277,6 @@ function formatHotelDualPriceParts(
   return undefined;
 }
 
-function flightSummaryParts(summary: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
-  const itinCur = itineraryCurrency;
-  const flightsCur = pickString(summary, ["flights_currency"]);
-  const itinOnly = pickScalar(summary, ["total_flights_cost_itinerary_currency"]);
-  const raw = pickScalar(summary, ["total_flights_cost"]);
-
-  if (itinOnly && itinCur) {
-    const primary = `${itinOnly} ${itinCur}`;
-    if (raw && flightsCur && flightsCur !== itinCur) {
-      return { primary, original: `${raw} ${flightsCur}` };
-    }
-    return { primary };
-  }
-  if (raw && (itinCur ?? flightsCur)) {
-    return { primary: `${raw} ${itinCur ?? flightsCur}` };
-  }
-  return undefined;
-}
-
-function hotelSummaryParts(summary: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
-  const itinCur = itineraryCurrency;
-  const hotelsCur = pickString(summary, ["hotels_currency"]);
-  const itinOnly = pickScalar(summary, ["total_hotels_cost_itinerary_currency"]);
-  const raw = pickScalar(summary, ["total_hotels_cost"]);
-
-  if (itinOnly && itinCur) {
-    const primary = `${itinOnly} ${itinCur}`;
-    if (raw && hotelsCur && hotelsCur !== itinCur) {
-      return { primary, original: `${raw} ${hotelsCur}` };
-    }
-    return { primary };
-  }
-  if (raw && (itinCur ?? hotelsCur)) {
-    return { primary: `${raw} ${itinCur ?? hotelsCur}` };
-  }
-  return undefined;
-}
-
 function parseFiniteAmount(s: string): number | undefined {
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : undefined;
@@ -433,10 +395,13 @@ function getHotelLegContribution(stay: UnknownRecord): number | undefined {
   return undefined;
 }
 
-function recomputeSummaryTotalsFromRanked(ranked: UnknownRecord): void {
-  const summary = pickRecord(ranked, ["summary"]);
-  if (!summary) return;
-
+/** Same sums as written by {@link recomputeSummaryTotalsFromRanked} (first-ranked flight/hotel option per leg item). */
+function computeFlightHotelItineraryTotalsFromRanked(ranked: UnknownRecord): {
+  flightsItinSum: number;
+  flightsContributions: number;
+  hotelsItinSum: number;
+  hotelsContributions: number;
+} {
   const legs = getLegsFromRanked(ranked);
   let flightsSum = 0;
   let flightsContributions = 0;
@@ -465,12 +430,40 @@ function recomputeSummaryTotalsFromRanked(ranked: UnknownRecord): void {
     }
   }
 
+  return {
+    flightsItinSum: flightsSum,
+    flightsContributions,
+    hotelsItinSum: hotelsSum,
+    hotelsContributions,
+  };
+}
+
+function recomputeSummaryTotalsFromRanked(ranked: UnknownRecord): void {
+  const summary = pickRecord(ranked, ["summary"]);
+  if (!summary) return;
+
+  const { flightsItinSum, flightsContributions, hotelsItinSum, hotelsContributions } =
+    computeFlightHotelItineraryTotalsFromRanked(ranked);
+
   if (flightsContributions > 0) {
-    summary.total_flights_cost_itinerary_currency = formatSummaryAmount(flightsSum);
+    summary.total_flights_cost_itinerary_currency = formatSummaryAmount(flightsItinSum);
   }
   if (hotelsContributions > 0) {
-    summary.total_hotels_cost_itinerary_currency = formatSummaryAmount(hotelsSum);
+    summary.total_hotels_cost_itinerary_currency = formatSummaryAmount(hotelsItinSum);
   }
+}
+
+function computedFlightHotelSummaryParts(
+  sum: number,
+  contributions: number,
+  itineraryCurrency?: string
+): DualPriceParts | undefined {
+  if (contributions <= 0) return undefined;
+  const amt = formatSummaryAmount(sum);
+  if (itineraryCurrency) {
+    return { primary: `${amt} ${itineraryCurrency}` };
+  }
+  return { primary: amt };
 }
 
 function applyFlightOptionsReorder(
@@ -1938,10 +1931,25 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   const itineraryStartIso = itineraryStartRaw ? asIsoDate(itineraryStartRaw) : undefined;
   const itineraryEndIso = itineraryEndRaw ? asIsoDate(itineraryEndRaw) : undefined;
   const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
-  const flightsSummaryParts = summary ? flightSummaryParts(summary, itineraryCurrency) : undefined;
   const hasHotelOptionsInData = rankedItineraryHasHotelOptions(rankedState);
-  const hotelsSummaryParts =
-    summary && hasHotelOptionsInData ? hotelSummaryParts(summary, itineraryCurrency) : undefined;
+
+  const { flightsSummaryParts, hotelsSummaryParts } = useMemo(() => {
+    const t = computeFlightHotelItineraryTotalsFromRanked(rankedState);
+    return {
+      flightsSummaryParts: computedFlightHotelSummaryParts(
+        t.flightsItinSum,
+        t.flightsContributions,
+        itineraryCurrency
+      ),
+      hotelsSummaryParts: hasHotelOptionsInData
+        ? computedFlightHotelSummaryParts(
+            t.hotelsItinSum,
+            t.hotelsContributions,
+            itineraryCurrency
+          )
+        : undefined,
+    };
+  }, [rankedState, itineraryCurrency, hasHotelOptionsInData]);
 
   const legs = getLegsFromRanked(rankedState);
   const legsWithContent = legs.filter((leg) => {
