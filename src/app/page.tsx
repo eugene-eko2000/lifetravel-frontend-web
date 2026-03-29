@@ -373,6 +373,26 @@ const isStatusMessage = (value: unknown): value is StatusMessage => {
   );
 };
 
+/** Reads `prompt_id` from itinerary payloads (root or nested under ranked_itinerary / itinerary / data / ranked). */
+function extractPromptIdFromItineraryPayload(value: unknown): string | undefined {
+  const fromObject = (obj: Record<string, unknown>): string | undefined => {
+    const raw = obj.prompt_id;
+    if (typeof raw === "string" && raw.trim()) return raw.trim();
+    if (typeof raw === "number" && Number.isFinite(raw)) return String(raw);
+    return undefined;
+  };
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const o = value as Record<string, unknown>;
+    const direct = fromObject(o);
+    if (direct) return direct;
+    const nested = o.ranked_itinerary ?? o.itinerary ?? o.data ?? o.ranked;
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      return fromObject(nested as Record<string, unknown>);
+    }
+  }
+  return undefined;
+}
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [debugMessages, setDebugMessages] = useState<DebugEntry[]>([]);
@@ -387,6 +407,8 @@ export default function Home() {
   const debugPanelScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  /** Last `prompt_id` from an itinerary JSON payload; sent on the next ItineraryRequest. */
+  const lastPromptIdRef = useRef<string | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
@@ -473,21 +495,13 @@ export default function Home() {
     const prompt = input.trim();
     if (!prompt || isConnecting || isStreaming) return;
 
-    // Start each request with fresh panels
-    setMessages([]);
-    setDebugMessages([]);
+    const continuingSamePromptId = lastPromptIdRef.current != null;
 
-    // Add user message
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
       content: prompt,
     };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput("");
-    setIsConnecting(true);
-
-    // Create assistant placeholder for streaming response
     const assistantMessageId = crypto.randomUUID();
     const assistantMessage: Message = {
       id: assistantMessageId,
@@ -496,7 +510,19 @@ export default function Home() {
       blocks: [],
       statusText: undefined,
     };
-    setMessages((prev) => [...prev, assistantMessage]);
+
+    if (continuingSamePromptId) {
+      setMessages((prev) => {
+        const promptsOnly = prev.filter((m) => m.role === "user");
+        return [...promptsOnly, userMessage, assistantMessage];
+      });
+    } else {
+      setDebugMessages([]);
+      setMessages([userMessage, assistantMessage]);
+    }
+
+    setInput("");
+    setIsConnecting(true);
 
     // Establish WebSocket connection
     const wsUrl = `${INGRESS_API}/api/v1/itinerary`;
@@ -510,7 +536,7 @@ export default function Home() {
       ws.send(
         JSON.stringify({
           id: null,
-          prompt_id: null,
+          prompt_id: lastPromptIdRef.current,
           content: prompt,
         })
       );
@@ -579,6 +605,10 @@ export default function Home() {
         parsedData !== null
           ? { type: "json", data: parsedData }
           : { type: "text", data: rawData };
+      if (parsedData !== null) {
+        const pid = extractPromptIdFromItineraryPayload(parsedData);
+        if (pid !== undefined) lastPromptIdRef.current = pid;
+      }
       setIsStreaming(false);
       setMessages((prev) =>
         prev.map((msg) =>
