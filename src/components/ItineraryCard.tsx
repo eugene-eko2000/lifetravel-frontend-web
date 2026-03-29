@@ -466,6 +466,66 @@ function computedFlightHotelSummaryParts(
   return { primary: amt };
 }
 
+/** `_ranking.score` on each flight/hotel option; higher is better. Missing score sorts last. */
+function pickOptionRankingScore(opt: UnknownRecord): number | undefined {
+  const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
+  if (!r) return undefined;
+  const s = r.score;
+  if (typeof s === "number" && Number.isFinite(s)) return s;
+  if (typeof s === "string" && s.trim()) {
+    const n = parseFloat(s.trim());
+    if (Number.isFinite(n)) return n;
+  }
+  return undefined;
+}
+
+function compareOptionsByRankingScoreDescending(a: UnknownRecord, b: UnknownRecord): number {
+  const sa = pickOptionRankingScore(a);
+  const sb = pickOptionRankingScore(b);
+  if (sa != null && sb != null) return sb - sa;
+  if (sa != null) return -1;
+  if (sb != null) return 1;
+  return 0;
+}
+
+function sortOptionsArrayByRankingScore(objs: UnknownRecord[]): unknown[] {
+  return [...objs].sort(compareOptionsByRankingScoreDescending);
+}
+
+function sortOptionsOnEntity(entity: UnknownRecord): void {
+  const options = pickArray(entity, ["options"]) ?? [];
+  const objs = options.filter(isObject) as UnknownRecord[];
+  if (objs.length < 2) return;
+  entity.options = sortOptionsArrayByRankingScore(objs);
+}
+
+/** Sorts `options` on every flight and hotel under each leg (or top-level flights/hotels). */
+function sortFlightAndHotelOptionsByRankingInRanked(ranked: UnknownRecord): void {
+  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  if (legs && legs.length > 0) {
+    for (const leg of legs) {
+      if (!isObject(leg)) continue;
+      const flights = pickArray(leg, ["flights"]) ?? [];
+      for (const f of flights) {
+        if (isObject(f)) sortOptionsOnEntity(f);
+      }
+      const hotels = pickArray(leg, ["hotels"]) ?? [];
+      for (const h of hotels) {
+        if (isObject(h)) sortOptionsOnEntity(h);
+      }
+    }
+    return;
+  }
+  const flights = pickArray(ranked, ["flights"]) ?? [];
+  for (const f of flights) {
+    if (isObject(f)) sortOptionsOnEntity(f);
+  }
+  const hotels = pickArray(ranked, ["hotels"]) ?? [];
+  for (const h of hotels) {
+    if (isObject(h)) sortOptionsOnEntity(h);
+  }
+}
+
 function applyFlightOptionsReorder(
   ranked: UnknownRecord,
   legIndex: number,
@@ -1900,7 +1960,12 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   const itineraryIndex = pickNumber(envelope, ["itinerary_index"]);
   const itineraryCount = pickNumber(envelope, ["itinerary_count"]);
 
-  const [rankedState, setRankedState] = useState<UnknownRecord>(() => structuredClone(ranked));
+  const [rankedState, setRankedState] = useState<UnknownRecord>(() => {
+    const next = structuredClone(ranked);
+    sortFlightAndHotelOptionsByRankingInRanked(next);
+    recomputeSummaryTotalsFromRanked(next);
+    return next;
+  });
 
   const reorderFlightOptions = useCallback((legIndex: number, flightIndex: number, newOptions: unknown[]) => {
     setRankedState((prev) => {
