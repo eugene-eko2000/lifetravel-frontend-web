@@ -27,10 +27,10 @@ import {
   type ReactNode,
 } from "react";
 
-const ItineraryCurrencyContext = createContext<string | undefined>(undefined);
+const TripCurrencyContext = createContext<string | undefined>(undefined);
 
-function useItineraryCurrency(): string | undefined {
-  return useContext(ItineraryCurrencyContext);
+function useTripCurrency(): string | undefined {
+  return useContext(TripCurrencyContext);
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -90,10 +90,12 @@ function pickArray(obj: UnknownRecord, keys: string[]): unknown[] | undefined {
   return undefined;
 }
 
-export function looksLikeItinerary(data: unknown): boolean {
+export function looksLikeTrip(data: unknown): boolean {
   if (!isObject(data)) return false;
 
-  // common shapes: { itinerary: {...} } or { ranked_itinerary: {...} } or { ranked: {...} }
+  // Latest: { trip: {...} } or { ranked_trip: {...} }; legacy: itinerary / ranked_itinerary
+  if ("trip" in data && isObject(data.trip)) return true;
+  if ("ranked_trip" in data && isObject((data as UnknownRecord).ranked_trip)) return true;
   if ("itinerary" in data && isObject(data.itinerary)) return true;
   if ("ranked_itinerary" in data && isObject((data as UnknownRecord).ranked_itinerary)) return true;
   if ("ranked" in data && isObject((data as UnknownRecord).ranked)) return true;
@@ -101,9 +103,10 @@ export function looksLikeItinerary(data: unknown): boolean {
   if (Array.isArray((data as UnknownRecord).day_plans)) return true;
   if (Array.isArray((data as UnknownRecord).dayPlans)) return true;
 
-  // sometimes nested under "data"
   if ("data" in data && isObject(data.data)) {
     const inner = data.data;
+    if ("trip" in inner && isObject(inner.trip)) return true;
+    if ("ranked_trip" in inner && isObject((inner as UnknownRecord).ranked_trip)) return true;
     if ("itinerary" in inner && isObject(inner.itinerary)) return true;
     if ("ranked_itinerary" in inner && isObject((inner as UnknownRecord).ranked_itinerary)) return true;
     if ("ranked" in inner && isObject((inner as UnknownRecord).ranked)) return true;
@@ -133,7 +136,7 @@ function pickScalar(obj: UnknownRecord, keys: string[]): string | undefined {
   return undefined;
 }
 
-/** Primary = itinerary; optional original = billing currency from `price.currency`. */
+/** Primary = trip display currency; optional original = billing currency from `price.currency`. */
 type DualPriceParts = { primary: string; original?: string };
 
 function DualPriceDisplay({ parts }: { parts: DualPriceParts | undefined }) {
@@ -149,22 +152,25 @@ function DualPriceDisplay({ parts }: { parts: DualPriceParts | undefined }) {
 }
 
 /**
- * Amadeus flight/offer price: itinerary amount first (`704.13 CHF`), then original (`767.01 EUR`) when it differs.
+ * Amadeus flight/offer price: converted trip-currency amount first (`704.13 CHF`), then original (`767.01 EUR`) when it differs.
  */
-function formatAmadeusDualPriceParts(price: UnknownRecord, itineraryCurrency?: string): DualPriceParts | undefined {
+function formatAmadeusDualPriceParts(price: UnknownRecord, tripCurrency?: string): DualPriceParts | undefined {
   const origCur = pickString(price, ["currency"]);
   const origAmt = pickScalar(price, ["grandTotal", "total"]);
   const originalLine = origCur && origAmt ? `${origAmt} ${origCur}` : undefined;
 
-  if (itineraryCurrency) {
-    const itinAmt = pickScalar(price, [
+  if (tripCurrency) {
+    const tripAmt = pickScalar(price, [
+      "grandTotal_trip_currency",
+      "total_trip_currency",
+      "base_trip_currency",
       "grandTotal_itinerary_currency",
       "total_itinerary_currency",
       "base_itinerary_currency",
     ]);
-    if (itinAmt) {
-      const primary = `${itinAmt} ${itineraryCurrency}`;
-      if (originalLine && origCur && origCur !== itineraryCurrency) {
+    if (tripAmt) {
+      const primary = `${tripAmt} ${tripCurrency}`;
+      if (originalLine && origCur && origCur !== tripCurrency) {
         return { primary, original: originalLine };
       }
       return { primary };
@@ -176,7 +182,7 @@ function formatAmadeusDualPriceParts(price: UnknownRecord, itineraryCurrency?: s
 
 function formatHotelDualPriceParts(
   opt: UnknownRecord,
-  itineraryCurrency?: string,
+  tripCurrency?: string,
   parentStay?: UnknownRecord
 ): DualPriceParts | undefined {
   const nights = getNightCountForHotelPrice(opt, parentStay);
@@ -193,12 +199,17 @@ function formatHotelDualPriceParts(
 
   const origTotalFromPrice = price ? pickScalar(price, ["grandTotal", "total"]) : undefined;
 
-  if (itineraryCurrency) {
+  if (tripCurrency) {
     if (price) {
-      const totalItin = pickScalar(price, ["total_itinerary_currency", "grandTotal_itinerary_currency"]);
-      if (totalItin) {
-        const primary = `${totalItin} ${itineraryCurrency}${nightsLabel}`;
-        if (origTotalFromPrice && origCur && origCur !== itineraryCurrency) {
+      const totalTripAmount = pickScalar(price, [
+        "total_trip_currency",
+        "grandTotal_trip_currency",
+        "total_itinerary_currency",
+        "grandTotal_itinerary_currency",
+      ]);
+      if (totalTripAmount) {
+        const primary = `${totalTripAmount} ${tripCurrency}${nightsLabel}`;
+        if (origTotalFromPrice && origCur && origCur !== tripCurrency) {
           return { primary, original: `${origTotalFromPrice} ${origCur}${nightsLabel}` };
         }
         return { primary };
@@ -206,30 +217,35 @@ function formatHotelDualPriceParts(
     }
     if (r) {
       const fromRankingTotal = pickScalar(r, [
+        "total_trip_currency",
+        "total_stay_trip_currency",
+        "grand_total_trip_currency",
         "total_itinerary_currency",
         "total_stay_itinerary_currency",
         "grand_total_itinerary_currency",
       ]);
       if (fromRankingTotal) {
-        const primary = `${fromRankingTotal} ${itineraryCurrency}${nightsLabel}`;
+        const primary = `${fromRankingTotal} ${tripCurrency}${nightsLabel}`;
         const origT = pickScalar(r, ["total", "grand_total"]);
-        if (origT && origCur && origCur !== itineraryCurrency) {
+        if (origT && origCur && origCur !== tripCurrency) {
           return { primary, original: `${origT} ${origCur}${nightsLabel}` };
         }
-        if (origTotalFromPrice && origCur && origCur !== itineraryCurrency) {
+        if (origTotalFromPrice && origCur && origCur !== tripCurrency) {
           return { primary, original: `${origTotalFromPrice} ${origCur}${nightsLabel}` };
         }
         return { primary };
       }
     }
-    const fromRankingPn = r ? pickScalar(r, ["price_per_night_itinerary_currency"]) : undefined;
+    const fromRankingPn = r
+      ? pickScalar(r, ["price_per_night_trip_currency", "price_per_night_itinerary_currency"])
+      : undefined;
     if (fromRankingPn && nights != null) {
       const pnAmt = parseFiniteAmount(fromRankingPn);
       if (pnAmt != null) {
         const total = pnAmt * nights;
-        const primary = `${formatSummaryAmount(total)} ${itineraryCurrency}${nightsLabel}`;
+        const primary = `${formatSummaryAmount(total)} ${tripCurrency}${nightsLabel}`;
         const origPn = r ? pickNumber(r, ["price_per_night"]) : undefined;
-        if (origPn != null && origCur && origCur !== itineraryCurrency) {
+        if (origPn != null && origCur && origCur !== tripCurrency) {
           return {
             primary,
             original: `${formatSummaryAmount(origPn * nights)} ${origCur}${nightsLabel}`,
@@ -239,14 +255,19 @@ function formatHotelDualPriceParts(
       }
     }
     if (average && nights != null) {
-      const itinPerNight = pickScalar(average, ["total_itinerary_currency", "base_itinerary_currency"]);
+      const tripPerNight = pickScalar(average, [
+        "total_trip_currency",
+        "base_trip_currency",
+        "total_itinerary_currency",
+        "base_itinerary_currency",
+      ]);
       const origPerNight = pickScalar(average, ["total", "base"]);
-      if (itinPerNight) {
-        const pnAmt = parseFiniteAmount(itinPerNight);
+      if (tripPerNight) {
+        const pnAmt = parseFiniteAmount(tripPerNight);
         if (pnAmt != null) {
           const total = pnAmt * nights;
-          const primary = `${formatSummaryAmount(total)} ${itineraryCurrency}${nightsLabel}`;
-          if (origPerNight && origCur && origCur !== itineraryCurrency) {
+          const primary = `${formatSummaryAmount(total)} ${tripCurrency}${nightsLabel}`;
+          if (origPerNight && origCur && origCur !== tripCurrency) {
             const opn = parseFiniteAmount(origPerNight);
             if (opn != null) {
               return {
@@ -267,7 +288,7 @@ function formatHotelDualPriceParts(
   }
   const num = r ? pickNumber(r, ["price_per_night"]) : undefined;
   if (num != null && nights != null) {
-    const cur = origCur ?? itineraryCurrency;
+    const cur = origCur ?? tripCurrency;
     if (cur) {
       return { primary: `${formatSummaryAmount(num * nights)} ${cur}${nightsLabel}` };
     }
@@ -326,10 +347,13 @@ function getNightCountForHotelPrice(opt: UnknownRecord, parentStay?: UnknownReco
   return undefined;
 }
 
-function getFlightOptionItineraryAmount(opt: UnknownRecord): number | undefined {
+function getFlightOptionTripAmount(opt: UnknownRecord): number | undefined {
   const price = pickRecord(opt, ["price"]);
   if (!price) return undefined;
   const v = pickScalar(price, [
+    "grandTotal_trip_currency",
+    "total_trip_currency",
+    "base_trip_currency",
     "grandTotal_itinerary_currency",
     "total_itinerary_currency",
     "base_itinerary_currency",
@@ -344,12 +368,15 @@ function getFlightLegContribution(flight: UnknownRecord): number | undefined {
   const objs = options.filter(isObject) as UnknownRecord[];
   const first = objs.length > 0 ? objs[0] : undefined;
   if (first) {
-    const fromOpt = getFlightOptionItineraryAmount(first);
+    const fromOpt = getFlightOptionTripAmount(first);
     if (fromOpt != null) return fromOpt;
   }
   const price = pickRecord(flight, ["price"]);
   if (price) {
     const v = pickScalar(price, [
+      "grandTotal_trip_currency",
+      "total_trip_currency",
+      "base_trip_currency",
       "grandTotal_itinerary_currency",
       "total_itinerary_currency",
       "base_itinerary_currency",
@@ -359,16 +386,19 @@ function getFlightLegContribution(flight: UnknownRecord): number | undefined {
   return undefined;
 }
 
-function getHotelOptionItineraryTotal(opt: UnknownRecord, parentStay: UnknownRecord): number | undefined {
+function getHotelOptionTripTotal(opt: UnknownRecord, parentStay: UnknownRecord): number | undefined {
   const r = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
   if (r) {
     const total = pickScalar(r, [
+      "total_trip_currency",
+      "total_stay_trip_currency",
+      "grand_total_trip_currency",
       "total_itinerary_currency",
       "total_stay_itinerary_currency",
       "grand_total_itinerary_currency",
     ]);
     if (total) return parseFiniteAmount(total);
-    const pn = pickScalar(r, ["price_per_night_itinerary_currency"]);
+    const pn = pickScalar(r, ["price_per_night_trip_currency", "price_per_night_itinerary_currency"]);
     const nights = getNightsFromStay(parentStay);
     const pnAmt = pn ? parseFiniteAmount(pn) : undefined;
     if (pnAmt != null && nights != null) return pnAmt * nights;
@@ -378,9 +408,10 @@ function getHotelOptionItineraryTotal(opt: UnknownRecord, parentStay: UnknownRec
   const price = first ? pickRecord(first, ["price"]) : undefined;
   if (price) {
     const v = pickScalar(price, [
+      "total_trip_currency",
+      "grandTotal_trip_currency",
       "total_itinerary_currency",
       "grandTotal_itinerary_currency",
-      "total_itinerary_currency",
     ]);
     if (v) return parseFiniteAmount(v);
   }
@@ -391,15 +422,15 @@ function getHotelLegContribution(stay: UnknownRecord): number | undefined {
   const options = pickArray(stay, ["options"]) ?? [];
   const objs = options.filter(isObject) as UnknownRecord[];
   const first = objs.length > 0 ? objs[0] : undefined;
-  if (first) return getHotelOptionItineraryTotal(first, stay);
+  if (first) return getHotelOptionTripTotal(first, stay);
   return undefined;
 }
 
 /** Same sums as written by {@link recomputeSummaryTotalsFromRanked} (first-ranked flight/hotel option per leg item). */
-function computeFlightHotelItineraryTotalsFromRanked(ranked: UnknownRecord): {
-  flightsItinSum: number;
+function computeFlightHotelTripTotalsFromRanked(ranked: UnknownRecord): {
+  flightsTripSum: number;
   flightsContributions: number;
-  hotelsItinSum: number;
+  hotelsTripSum: number;
   hotelsContributions: number;
 } {
   const legs = getLegsFromRanked(ranked);
@@ -431,9 +462,9 @@ function computeFlightHotelItineraryTotalsFromRanked(ranked: UnknownRecord): {
   }
 
   return {
-    flightsItinSum: flightsSum,
+    flightsTripSum: flightsSum,
     flightsContributions,
-    hotelsItinSum: hotelsSum,
+    hotelsTripSum: hotelsSum,
     hotelsContributions,
   };
 }
@@ -442,26 +473,30 @@ function recomputeSummaryTotalsFromRanked(ranked: UnknownRecord): void {
   const summary = pickRecord(ranked, ["summary"]);
   if (!summary) return;
 
-  const { flightsItinSum, flightsContributions, hotelsItinSum, hotelsContributions } =
-    computeFlightHotelItineraryTotalsFromRanked(ranked);
+  const { flightsTripSum, flightsContributions, hotelsTripSum, hotelsContributions } =
+    computeFlightHotelTripTotalsFromRanked(ranked);
 
   if (flightsContributions > 0) {
-    summary.total_flights_cost_itinerary_currency = formatSummaryAmount(flightsItinSum);
+    const f = formatSummaryAmount(flightsTripSum);
+    summary.total_flights_cost_itinerary_currency = f;
+    summary.total_flights_cost_trip_currency = f;
   }
   if (hotelsContributions > 0) {
-    summary.total_hotels_cost_itinerary_currency = formatSummaryAmount(hotelsItinSum);
+    const h = formatSummaryAmount(hotelsTripSum);
+    summary.total_hotels_cost_itinerary_currency = h;
+    summary.total_hotels_cost_trip_currency = h;
   }
 }
 
 function computedFlightHotelSummaryParts(
   sum: number,
   contributions: number,
-  itineraryCurrency?: string
+  tripCurrency?: string
 ): DualPriceParts | undefined {
   if (contributions <= 0) return undefined;
   const amt = formatSummaryAmount(sum);
-  if (itineraryCurrency) {
-    return { primary: `${amt} ${itineraryCurrency}` };
+  if (tripCurrency) {
+    return { primary: `${amt} ${tripCurrency}` };
   }
   return { primary: amt };
 }
@@ -501,7 +536,7 @@ function sortOptionsOnEntity(entity: UnknownRecord): void {
 
 /** Sorts `options` on every flight and hotel under each leg (or top-level flights/hotels). */
 function sortFlightAndHotelOptionsByRankingInRanked(ranked: UnknownRecord): void {
-  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  const legs = pickArray(ranked, ["legs", "trip_legs", "itinerary_legs", "segments", "trip_segments"]);
   if (legs && legs.length > 0) {
     for (const leg of legs) {
       if (!isObject(leg)) continue;
@@ -532,7 +567,7 @@ function applyFlightOptionsReorder(
   flightIndex: number,
   newOptions: unknown[]
 ): void {
-  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  const legs = pickArray(ranked, ["legs", "trip_legs", "itinerary_legs", "segments", "trip_segments"]);
   if (legs && legs.length > 0) {
     const leg = legs[legIndex];
     if (isObject(leg)) {
@@ -557,7 +592,7 @@ function applyHotelOptionsReorder(
   hotelIndex: number,
   newOptions: unknown[]
 ): void {
-  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  const legs = pickArray(ranked, ["legs", "trip_legs", "itinerary_legs", "segments", "trip_segments"]);
   if (legs && legs.length > 0) {
     const leg = legs[legIndex];
     if (isObject(leg)) {
@@ -599,7 +634,7 @@ function asIsoDate(value: unknown): string | undefined {
   return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : undefined;
 }
 
-/** Formats YYYY-MM-DD for itinerary summary (matches flight date-only display style). */
+/** Formats YYYY-MM-DD for trip summary (matches flight date-only display style). */
 function formatIsoDateLabel(isoDate: string): string {
   const parts = isoDate.split("-").map(Number);
   const y = parts[0];
@@ -611,7 +646,7 @@ function formatIsoDateLabel(isoDate: string): string {
 }
 
 /** Start/end from summary when present; otherwise falls back to total duration days. */
-function formatItinerarySummaryDates(
+function formatTripSummaryDates(
   startIso: string | undefined,
   endIso: string | undefined,
   totalDurationDays: number | undefined
@@ -750,7 +785,8 @@ function collectAmadeusSegmentsInOrder(record: UnknownRecord): UnknownRecord[] {
   return out;
 }
 
-function formatFlightEndpointFromAmadeusItineraries(
+/** Uses Amadeus-style nested `itineraries[].segments[]` when present. */
+function formatFlightEndpointFromAmadeusStyleTree(
   record: UnknownRecord,
   side: "departure" | "arrival",
   fmt: FlightEndpointFormatter = formatFlightDateTime
@@ -771,7 +807,7 @@ function formatFlightEndpointDisplay(
   const nested = formatFlightEndpointFromNestedEndpoint(record, side, fmt);
   if (nested) return nested;
 
-  const fromAmadeus = formatFlightEndpointFromAmadeusItineraries(record, side, fmt);
+  const fromAmadeus = formatFlightEndpointFromAmadeusStyleTree(record, side, fmt);
   if (fromAmadeus) return fromAmadeus;
 
   const options = pickArray(record, ["options"]);
@@ -779,7 +815,7 @@ function formatFlightEndpointDisplay(
     const candidates = options.filter(isObject) as UnknownRecord[];
     const first = candidates.length > 0 ? candidates[0] : undefined;
     if (first) {
-      const fromOption = formatFlightEndpointFromAmadeusItineraries(first, side, fmt);
+      const fromOption = formatFlightEndpointFromAmadeusStyleTree(first, side, fmt);
       if (fromOption) return fromOption;
     }
   }
@@ -837,29 +873,52 @@ function formatFlightEndpointDisplay(
   const segmentsOnly = pickArray(record, ["segments"]);
   if (segmentsOnly?.length) {
     const wrapped = { itineraries: [{ segments: segmentsOnly }] } as UnknownRecord;
-    const fromSegList = formatFlightEndpointFromAmadeusItineraries(wrapped, side, fmt);
+    const fromSegList = formatFlightEndpointFromAmadeusStyleTree(wrapped, side, fmt);
     if (fromSegList) return fromSegList;
   }
 
   return undefined;
 }
 
-/** Segments from Amadeus itineraries or a top-level `segments` array. */
+/** Segments from Amadeus `itineraries` or a top-level `segments` array. */
 function collectSegmentsFromRecord(record: UnknownRecord): UnknownRecord[] {
-  const fromItin = collectAmadeusSegmentsInOrder(record);
-  if (fromItin.length > 0) return fromItin;
+  const fromAmadeusTree = collectAmadeusSegmentsInOrder(record);
+  if (fromAmadeusTree.length > 0) return fromAmadeusTree;
   const direct = pickArray(record, ["segments"]) ?? [];
   return direct.filter(isObject) as UnknownRecord[];
 }
 
-/** Prefer first option when it carries segment data; else the flight record. */
-function gatherSegmentsForFlight(flight: UnknownRecord): UnknownRecord[] {
+/**
+ * When `itineraries` has multiple entries (e.g. outbound + return), one group per itinerary.
+ * Otherwise a single group of all segments (connecting flights within the same trip direction).
+ */
+function collectSegmentGroupsFromRecord(record: UnknownRecord): UnknownRecord[][] {
+  const itineraries = pickArray(record, ["itineraries"]) ?? [];
+  const objs = itineraries.filter(isObject) as UnknownRecord[];
+  if (objs.length > 1) {
+    const groups = objs
+      .map((itin) => {
+        const segs = pickArray(itin, ["segments"]) ?? [];
+        return segs.filter(isObject) as UnknownRecord[];
+      })
+      .filter((g) => g.length > 0);
+    if (groups.length > 0) return groups;
+  }
+  const flat = collectSegmentsFromRecord(record);
+  return flat.length > 0 ? [flat] : [];
+}
+
+/** Prefer first fare option when present; else the parent flight record. */
+function gatherFlightOfferSourceRecord(flight: UnknownRecord): UnknownRecord {
   const options = pickArray(flight, ["options"]) ?? [];
   const objs = options.filter(isObject) as UnknownRecord[];
-  const first = objs.length > 0 ? objs[0] : undefined;
-  const candidates: UnknownRecord[] = [];
-  if (first) candidates.push(first);
-  candidates.push(flight);
+  if (objs.length > 0) return objs[0];
+  return flight;
+}
+
+/** Prefer first option when it carries segment data; else the flight record. */
+function gatherSegmentsForFlight(flight: UnknownRecord): UnknownRecord[] {
+  const candidates: UnknownRecord[] = [gatherFlightOfferSourceRecord(flight), flight];
   for (const c of candidates) {
     const segs = collectSegmentsFromRecord(c);
     if (segs.length > 0) return segs;
@@ -870,6 +929,40 @@ function gatherSegmentsForFlight(flight: UnknownRecord): UnknownRecord[] {
 function getSegmentEndpoint(seg: UnknownRecord, side: "departure" | "arrival"): UnknownRecord | undefined {
   const v = seg[side];
   return isObject(v) ? v : undefined;
+}
+
+function getSegmentEndpointIata(seg: UnknownRecord, side: "departure" | "arrival"): string | undefined {
+  const ep = getSegmentEndpoint(seg, side);
+  if (!ep) return undefined;
+  return pickString(ep, ["iataCode", "iata"]);
+}
+
+/** One summary line per Amadeus-style itinerary (first → last segment of that itinerary). */
+function formatSingleItinerarySummaryLine(itin: UnknownRecord): string | undefined {
+  const segs = (pickArray(itin, ["segments"]) ?? []).filter(isObject) as UnknownRecord[];
+  if (segs.length === 0) return undefined;
+  const first = segs[0];
+  const last = segs[segs.length - 1];
+  const o = getSegmentEndpointIata(first, "departure");
+  const d = getSegmentEndpointIata(last, "arrival");
+  if (!o || !d) return undefined;
+  const dep = formatFlightEndpointFromNestedEndpoint(first, "departure", formatFlightDateOnly);
+  const arr = formatFlightEndpointFromNestedEndpoint(last, "arrival", formatFlightDateOnly);
+  if (!dep || !arr) return undefined;
+  return `${o} - ${d} ${dep} - ${arr}`;
+}
+
+/** Non-empty only when `record.itineraries` has 2+ items (round-trip / multi-city in one offer). */
+function getMultiItinerarySummaryLines(record: UnknownRecord): string[] | undefined {
+  const itins = (pickArray(record, ["itineraries"]) ?? []).filter(isObject) as UnknownRecord[];
+  if (itins.length <= 1) return undefined;
+  const lines = itins.map(formatSingleItinerarySummaryLine).filter((x): x is string => Boolean(x));
+  return lines.length > 0 ? lines : undefined;
+}
+
+function itineraryGroupLabel(groupIndex: number, groupCount: number): string {
+  if (groupCount === 2) return groupIndex === 0 ? "Outbound" : "Return";
+  return `Leg ${groupIndex + 1}`;
 }
 
 function formatAirportLine(seg: UnknownRecord, side: "departure" | "arrival"): string {
@@ -1013,7 +1106,7 @@ function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): stri
 
 /** Prefer explicit `legs`; otherwise one synthetic leg from top-level flights + hotels. */
 function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
-  const legs = pickArray(ranked, ["legs", "itinerary_legs", "segments", "trip_segments"]);
+  const legs = pickArray(ranked, ["legs", "trip_legs", "itinerary_legs", "segments", "trip_segments"]);
   if (legs && legs.length > 0) {
     return legs.filter(isObject);
   }
@@ -1024,7 +1117,7 @@ function getLegsFromRanked(ranked: UnknownRecord): UnknownRecord[] {
 }
 
 /** True if any hotel stay has at least one object in `options`. */
-function rankedItineraryHasHotelOptions(ranked: UnknownRecord): boolean {
+function rankedTripHasHotelOptions(ranked: UnknownRecord): boolean {
   const legs = getLegsFromRanked(ranked);
   for (const leg of legs) {
     if (!isObject(leg)) continue;
@@ -1039,9 +1132,9 @@ function rankedItineraryHasHotelOptions(ranked: UnknownRecord): boolean {
 }
 
 function FlightOptionMetaLine({ opt }: { opt: UnknownRecord }) {
-  const itineraryCurrency = useItineraryCurrency();
+  const tripCurrency = useTripCurrency();
   const price = isObject(opt.price) ? (opt.price as UnknownRecord) : undefined;
-  const parts = price ? formatAmadeusDualPriceParts(price, itineraryCurrency) : undefined;
+  const parts = price ? formatAmadeusDualPriceParts(price, tripCurrency) : undefined;
   const ranking = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
   const durationMinutes = ranking ? pickNumber(ranking, ["duration_minutes"]) : undefined;
   const stops = ranking ? pickNumber(ranking, ["stops"]) : undefined;
@@ -1077,7 +1170,7 @@ function FlightOptionBox({
   parentFlight: UnknownRecord;
   parentFlightIndex: number;
 }) {
-  const itineraryCurrency = useItineraryCurrency();
+  const tripCurrency = useTripCurrency();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const from =
     pickString(opt, ["from", "origin", "departure_city"]) ?? pickString(parentFlight, ["from", "origin"]);
@@ -1097,6 +1190,7 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
+  const multiItinLines = getMultiItinerarySummaryLines(opt) ?? getMultiItinerarySummaryLines(parentFlight);
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -1115,10 +1209,20 @@ function FlightOptionBox({
           {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-sm font-medium text-foreground">{title}</p>
-            {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
-          </div>
+          {multiItinLines && multiItinLines.length > 1 ? (
+            <div className="space-y-1">
+              {multiItinLines.map((line, i) => (
+                <p key={i} className="text-sm font-medium text-foreground leading-snug">
+                  {line}
+                </p>
+              ))}
+            </div>
+          ) : (
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-medium text-foreground">{title}</p>
+              {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
+            </div>
+          )}
           <FlightOptionMetaLine opt={opt} />
         </div>
       </button>
@@ -1363,7 +1467,7 @@ function HotelOptionBox({
   parentStay: UnknownRecord;
   parentHotelIndex: number;
 }) {
-  const itineraryCurrency = useItineraryCurrency();
+  const tripCurrency = useTripCurrency();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
   const name = h ? pickString(h, ["name", "chain", "brand"]) : undefined;
@@ -1371,7 +1475,7 @@ function HotelOptionBox({
   const title = name ?? parentCity ?? `Hotel ${optionIndex + 1}`;
 
   const cityCode = h ? pickString(h, ["city_code", "cityCode", "city"]) : undefined;
-  const hotelParts = formatHotelDualPriceParts(opt, itineraryCurrency, parentStay);
+  const hotelParts = formatHotelDualPriceParts(opt, tripCurrency, parentStay);
 
   const offer = getPrimaryHotelOffer(opt);
   const checkInOffer = offer ? asIsoDate(pickString(offer, ["checkInDate", "check_in"])) : undefined;
@@ -1597,7 +1701,7 @@ function FlightSegmentFallback({ flight }: { flight: UnknownRecord }) {
       <p className="text-sm font-medium text-foreground">{[from, to].filter(Boolean).join(" → ") || "Route"}</p>
       <p className="mt-1 text-xs text-muted">{[dep, arr].filter(Boolean).join(" → ") || "—"}</p>
       <p className="mt-2 text-[10px] leading-snug text-muted">
-        Per-segment breakdown is not available for this itinerary.
+        Per-segment breakdown is not available for this trip.
       </p>
     </div>
   );
@@ -1621,11 +1725,17 @@ function FlightSegmentCard({
   index,
   total,
   fareDetail,
+  /** When set (multi-itinerary offer), "Segment X of Y" counts within this itinerary only. */
+  segmentIndexInLeg,
+  segmentCountInLeg,
 }: {
   seg: UnknownRecord;
+  /** Global index for fare matching (`fareDetailsBySegment` order). */
   index: number;
   total: number;
   fareDetail?: UnknownRecord;
+  segmentIndexInLeg?: number;
+  segmentCountInLeg?: number;
 }) {
   const dep = formatFlightEndpointFromNestedEndpoint(seg, "departure");
   const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
@@ -1638,11 +1748,16 @@ function FlightSegmentCard({
   const cabinBags = fareDetail ? formatFareBagsLine(pickFareBagsField(fareDetail, "cabin")) : undefined;
   const hasFareExtras = Boolean(cabinLabel || checkedBags || cabinBags);
 
+  const useLegLabels =
+    segmentIndexInLeg !== undefined && segmentCountInLeg !== undefined && segmentCountInLeg > 0;
+  const labelNum = useLegLabels ? segmentIndexInLeg + 1 : index + 1;
+  const labelTotal = useLegLabels ? segmentCountInLeg : total;
+
   return (
     <div className="rounded-md border border-border/50 bg-background/30 p-3">
       <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
-        Segment {index + 1}
-        {total > 1 ? ` of ${total}` : ""}
+        Segment {labelNum}
+        {labelTotal > 1 ? ` of ${labelTotal}` : ""}
       </p>
       <p className="mt-1 text-sm font-medium text-foreground">{carrier}</p>
       <dl className="mt-2 space-y-2 text-xs">
@@ -1691,30 +1806,81 @@ function FlightSegmentDetailList({
   /** When set (e.g. a fare option), segments are read from this record only. */
   segmentsFrom?: UnknownRecord;
 }) {
-  const segments =
-    segmentsFrom !== undefined ? collectSegmentsFromRecord(segmentsFrom) : gatherSegmentsForFlight(flight);
+  const source = segmentsFrom !== undefined ? segmentsFrom : gatherFlightOfferSourceRecord(flight);
+  const groups = collectSegmentGroupsFromRecord(source);
   const fallbackRecord = segmentsFrom ?? flight;
   /** Cabin/bags usually live on the offer option (`travelerPricings`); fall back to parent flight. */
   const fareSource = segmentsFrom ?? flight;
   const fareDetailsInOrder = getFirstTravelerFareDetailsBySegment(fareSource);
   const fareById = buildFareDetailBySegmentId(fareDetailsInOrder);
 
-  if (segments.length === 0) {
+  const flatCount = groups.reduce((n, g) => n + g.length, 0);
+  if (flatCount === 0) {
     return <FlightSegmentFallback flight={fallbackRecord} />;
   }
+
+  if (groups.length <= 1) {
+    const segments = groups[0] ?? [];
+    return (
+      <div className="space-y-2">
+        {segments.map((seg, i) => (
+          <Fragment key={i}>
+            <FlightSegmentCard
+              seg={seg}
+              index={i}
+              total={segments.length}
+              fareDetail={resolveFareDetailForSegment(seg, i, fareDetailsInOrder, fareById)}
+            />
+            {i < segments.length - 1 ? (
+              <FlightSegmentConnectionRow prev={segments[i]} next={segments[i + 1]} />
+            ) : null}
+          </Fragment>
+        ))}
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-2">
-      {segments.map((seg, i) => (
-        <Fragment key={i}>
-          <FlightSegmentCard
-            seg={seg}
-            index={i}
-            total={segments.length}
-            fareDetail={resolveFareDetailForSegment(seg, i, fareDetailsInOrder, fareById)}
-          />
-          {i < segments.length - 1 ? <FlightSegmentConnectionRow prev={segments[i]} next={segments[i + 1]} /> : null}
-        </Fragment>
-      ))}
+    <div className="space-y-4">
+      {groups.map((group, gi) => {
+        const segStart = groups.slice(0, gi).reduce((s, g) => s + g.length, 0);
+        const legLabel = itineraryGroupLabel(gi, groups.length);
+        return (
+          <div
+            key={gi}
+            className="overflow-hidden rounded-lg border border-border/70 bg-background/25"
+          >
+            <div className="border-b border-border/50 bg-muted/20 px-3 py-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground">{legLabel}</p>
+              {group.length > 1 ? (
+                <p className="mt-0.5 text-[10px] text-muted">
+                  {group.length} segment{group.length === 1 ? "" : "s"} in this direction
+                </p>
+              ) : null}
+            </div>
+            <div className="space-y-2 px-3 py-2">
+              {group.map((seg, si) => {
+                const idx = segStart + si;
+                return (
+                  <Fragment key={`${gi}-${si}`}>
+                    <FlightSegmentCard
+                      seg={seg}
+                      index={idx}
+                      total={flatCount}
+                      segmentIndexInLeg={si}
+                      segmentCountInLeg={group.length}
+                      fareDetail={resolveFareDetailForSegment(seg, idx, fareDetailsInOrder, fareById)}
+                    />
+                    {si < group.length - 1 ? (
+                      <FlightSegmentConnectionRow prev={group[si]} next={group[si + 1]} />
+                    ) : null}
+                  </Fragment>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1739,6 +1905,8 @@ function FlightRow({
   const title = [from, to].filter(Boolean).join(" → ") || `Flight ${labelIndex + 1}`;
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
+  const previewSource = objectOptions[0] ?? flight;
+  const multiItinLines = getMultiItinerarySummaryLines(previewSource);
   const departSummary = formatFlightEndpointDisplay(flight, "departure", true);
   const arriveSummary = formatFlightEndpointDisplay(flight, "arrival", true);
   const dateSummary = [departSummary, arriveSummary].filter(Boolean).join(" → ");
@@ -1760,15 +1928,25 @@ function FlightRow({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-            <p className="min-w-0 text-sm text-foreground">
-              <span className="font-medium">{title}</span>
-              {dateSummary ? (
-                <>
-                  <span className="font-medium text-muted"> · </span>
-                  <span className="font-normal text-muted">{dateSummary}</span>
-                </>
-              ) : null}
-            </p>
+            {multiItinLines && multiItinLines.length > 1 ? (
+              <div className="min-w-0 space-y-0.5">
+                {multiItinLines.map((line, i) => (
+                  <p key={i} className="text-sm text-foreground">
+                    <span className="font-medium">{line}</span>
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <p className="min-w-0 text-sm text-foreground">
+                <span className="font-medium">{title}</span>
+                {dateSummary ? (
+                  <>
+                    <span className="font-medium text-muted"> · </span>
+                    <span className="font-normal text-muted">{dateSummary}</span>
+                  </>
+                ) : null}
+              </p>
+            )}
             {objectOptions.length > 0 ? (
               <p className="text-xs text-muted shrink-0">
                 {objectOptions.length === 1 ? "1 fare option" : `${objectOptions.length} fare options`}
@@ -1956,9 +2134,9 @@ function LegHotelsBlock({
   );
 }
 
-function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ranked: UnknownRecord }) {
-  const itineraryIndex = pickNumber(envelope, ["itinerary_index"]);
-  const itineraryCount = pickNumber(envelope, ["itinerary_count"]);
+function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; ranked: UnknownRecord }) {
+  const tripIndex = pickNumber(envelope, ["trip_index", "itinerary_index"]);
+  const tripCount = pickNumber(envelope, ["trip_count", "itinerary_count"]);
 
   const [rankedState, setRankedState] = useState<UnknownRecord>(() => {
     const next = structuredClone(ranked);
@@ -1987,34 +2165,34 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
 
   const summary = pickRecord(rankedState, ["summary"]);
   const totalDays = summary ? pickNumber(summary, ["total_duration_days"]) : undefined;
-  const itineraryStartRaw = summary
-    ? pickString(summary, ["itinerary_start_date", "start_date", "startDate"])
+  const tripStartRaw = summary
+    ? pickString(summary, ["trip_start_date", "itinerary_start_date", "start_date", "startDate"])
     : undefined;
-  const itineraryEndRaw = summary
-    ? pickString(summary, ["itinerary_end_date", "end_date", "endDate"])
+  const tripEndRaw = summary
+    ? pickString(summary, ["trip_end_date", "itinerary_end_date", "end_date", "endDate"])
     : undefined;
-  const itineraryStartIso = itineraryStartRaw ? asIsoDate(itineraryStartRaw) : undefined;
-  const itineraryEndIso = itineraryEndRaw ? asIsoDate(itineraryEndRaw) : undefined;
-  const itineraryCurrency = summary ? pickString(summary, ["itinerary_currency"]) : undefined;
-  const hasHotelOptionsInData = rankedItineraryHasHotelOptions(rankedState);
+  const tripStartIso = tripStartRaw ? asIsoDate(tripStartRaw) : undefined;
+  const tripEndIso = tripEndRaw ? asIsoDate(tripEndRaw) : undefined;
+  const tripCurrency = summary ? pickString(summary, ["trip_currency", "itinerary_currency"]) : undefined;
+  const hasHotelOptionsInData = rankedTripHasHotelOptions(rankedState);
 
   const { flightsSummaryParts, hotelsSummaryParts } = useMemo(() => {
-    const t = computeFlightHotelItineraryTotalsFromRanked(rankedState);
+    const t = computeFlightHotelTripTotalsFromRanked(rankedState);
     return {
       flightsSummaryParts: computedFlightHotelSummaryParts(
-        t.flightsItinSum,
+        t.flightsTripSum,
         t.flightsContributions,
-        itineraryCurrency
+        tripCurrency
       ),
       hotelsSummaryParts: hasHotelOptionsInData
         ? computedFlightHotelSummaryParts(
-            t.hotelsItinSum,
+            t.hotelsTripSum,
             t.hotelsContributions,
-            itineraryCurrency
+            tripCurrency
           )
         : undefined,
     };
-  }, [rankedState, itineraryCurrency, hasHotelOptionsInData]);
+  }, [rankedState, tripCurrency, hasHotelOptionsInData]);
 
   const legs = getLegsFromRanked(rankedState);
   const legsWithContent = legs.filter((leg) => {
@@ -2024,21 +2202,21 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
   });
 
   return (
-    <ItineraryCurrencyContext.Provider value={itineraryCurrency}>
+    <TripCurrencyContext.Provider value={tripCurrency}>
       <div className="rounded-xl border border-border bg-surface p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">
-              Itinerary
-              {typeof itineraryIndex === "number" && typeof itineraryCount === "number"
-                ? ` • ${itineraryIndex + 1}/${itineraryCount}`
+              Trip
+              {typeof tripIndex === "number" && typeof tripCount === "number"
+                ? ` • ${tripIndex + 1}/${tripCount}`
                 : ""}
             </p>
           </div>
         </div>
 
-        {(itineraryStartIso != null ||
-          itineraryEndIso != null ||
+        {(tripStartIso != null ||
+          tripEndIso != null ||
           totalDays != null ||
           flightsSummaryParts != null ||
           hotelsSummaryParts != null ||
@@ -2049,7 +2227,7 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
             <div className="rounded-lg border border-border bg-background/40 p-2">
               <p className="text-[10px] text-muted">Dates</p>
               <p className="text-sm font-medium text-foreground">
-                {formatItinerarySummaryDates(itineraryStartIso, itineraryEndIso, totalDays)}
+                {formatTripSummaryDates(tripStartIso, tripEndIso, totalDays)}
               </p>
             </div>
             <div className="rounded-lg border border-border bg-background/40 p-2">
@@ -2116,12 +2294,16 @@ function RankedItineraryCard({ envelope, ranked }: { envelope: UnknownRecord; ra
         </div>
         )}
       </div>
-    </ItineraryCurrencyContext.Provider>
+    </TripCurrencyContext.Provider>
   );
 }
 
-function normalizeItineraryRoot(data: unknown): UnknownRecord | undefined {
+function normalizeTripRoot(data: unknown): UnknownRecord | undefined {
   if (!isObject(data)) return undefined;
+  if ("trip" in data && isObject(data.trip)) return data.trip as UnknownRecord;
+  if ("ranked_trip" in data && isObject((data as UnknownRecord).ranked_trip)) {
+    return (data as UnknownRecord).ranked_trip as UnknownRecord;
+  }
   if ("itinerary" in data && isObject(data.itinerary)) return data.itinerary;
   if ("ranked_itinerary" in data && isObject((data as UnknownRecord).ranked_itinerary)) {
     return (data as UnknownRecord).ranked_itinerary as UnknownRecord;
@@ -2131,6 +2313,10 @@ function normalizeItineraryRoot(data: unknown): UnknownRecord | undefined {
   }
   if ("data" in data && isObject(data.data)) {
     const inner = data.data;
+    if ("trip" in inner && isObject(inner.trip)) return inner.trip as UnknownRecord;
+    if ("ranked_trip" in inner && isObject((inner as UnknownRecord).ranked_trip)) {
+      return (inner as UnknownRecord).ranked_trip as UnknownRecord;
+    }
     if ("itinerary" in inner && isObject(inner.itinerary)) return inner.itinerary;
     if ("ranked_itinerary" in inner && isObject((inner as UnknownRecord).ranked_itinerary)) {
       return (inner as UnknownRecord).ranked_itinerary as UnknownRecord;
@@ -2143,20 +2329,22 @@ function normalizeItineraryRoot(data: unknown): UnknownRecord | undefined {
   return data;
 }
 
-export function ItineraryCard({ data }: { data: unknown }) {
-  // Envelope-aware ranked itinerary format:
-  // { type: "ranked" | "ranked_itinerary" | "ranked", id, itinerary_index, itinerary_count, ranked_itinerary: {...} }
+export function TripCard({ data }: { data: unknown }) {
+  // Envelope: ranked_trip (latest) or ranked_itinerary (legacy); trip_index / trip_count on envelope.
+  if (isObject(data) && "ranked_trip" in data && isObject((data as UnknownRecord).ranked_trip)) {
+    return <RankedTripCard envelope={data} ranked={(data as UnknownRecord).ranked_trip as UnknownRecord} />;
+  }
   if (isObject(data) && "ranked_itinerary" in data && isObject((data as UnknownRecord).ranked_itinerary)) {
-    return <RankedItineraryCard envelope={data} ranked={(data as UnknownRecord).ranked_itinerary as UnknownRecord} />;
+    return <RankedTripCard envelope={data} ranked={(data as UnknownRecord).ranked_itinerary as UnknownRecord} />;
   }
 
-  const root = normalizeItineraryRoot(data);
+  const root = normalizeTripRoot(data);
   if (!root) return null;
 
   const title =
     pickString(root, ["title", "name"]) ??
     pickString(root, ["destination", "location", "city", "country"]) ??
-    "Itinerary";
+    "Trip";
 
   const subtitleParts: string[] = [];
   const destination = pickString(root, ["destination", "location"]);

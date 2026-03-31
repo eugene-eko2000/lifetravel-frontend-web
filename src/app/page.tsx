@@ -12,9 +12,9 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { JsonViewer } from "@/components/JsonViewer";
-import { ItineraryCard, looksLikeItinerary } from "@/components/ItineraryCard";
+import { TripCard, looksLikeTrip } from "@/components/TripCard";
 
-type ItineraryBlock =
+type TripBlock =
   | { type: "json"; data: unknown }
   | { type: "text"; data: string };
 
@@ -23,9 +23,11 @@ interface Message {
   role: "user" | "assistant";
   content: string;
   /** Assistant-only: each websocket payload as a block (JSON or plain text) */
-  blocks?: ItineraryBlock[];
+  blocks?: TripBlock[];
   /** Assistant-only: latest status text for current request */
   statusText?: string;
+  /** Assistant-only: `structured_request.output.missing_info` from `type: "missing_info"` messages */
+  missingInfoText?: string;
 }
 
 interface DebugMessage {
@@ -49,11 +51,11 @@ interface StatusMessage {
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
 
-const ITINERARY_PAGE_SIZE = 10;
+const TRIP_PAGE_SIZE = 10;
 
-const ITINERARY_MODAL_COPY_KEY = "itinerary-modal";
+const TRIP_MODAL_COPY_KEY = "trip-modal";
 
-function ItineraryModal({
+function TripModal({
   data,
   mountKey,
   onClose,
@@ -98,21 +100,21 @@ function ItineraryModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="itinerary-modal-title"
+        aria-labelledby="trip-modal-title"
         className="relative flex max-h-[min(90vh,900px)] w-full max-w-[min(95vw,96rem)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 pr-12">
-          <h2 id="itinerary-modal-title" className="text-sm font-semibold text-foreground">
-            Itinerary
+          <h2 id="trip-modal-title" className="text-sm font-semibold text-foreground">
+            Trip
           </h2>
           {isDebugPanelOpen && (
             <button
               type="button"
-              onClick={() => copyJsonToClipboard(data, ITINERARY_MODAL_COPY_KEY)}
+              onClick={() => copyJsonToClipboard(data, TRIP_MODAL_COPY_KEY)}
               className="text-xs font-medium text-muted hover:text-foreground transition-colors"
             >
-              {copiedBlockKey === ITINERARY_MODAL_COPY_KEY ? "Copied!" : "Copy"}
+              {copiedBlockKey === TRIP_MODAL_COPY_KEY ? "Copied!" : "Copy"}
             </button>
           )}
         </div>
@@ -135,7 +137,7 @@ function ItineraryModal({
           </svg>
         </button>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <ItineraryCard key={mountKey} data={data} />
+          <TripCard key={mountKey} data={data} />
         </div>
       </div>
     </div>,
@@ -150,7 +152,7 @@ function AssistantMessageBlocks({
   isConnecting,
   isStreaming,
   isDebugPanelOpen,
-  onOpenItineraryModal,
+  onOpenTripModal,
 }: {
   message: Message;
   copiedBlockKey: string | null;
@@ -158,44 +160,44 @@ function AssistantMessageBlocks({
   isConnecting: boolean;
   isStreaming: boolean;
   isDebugPanelOpen: boolean;
-  onOpenItineraryModal: (data: unknown) => void;
+  onOpenTripModal: (data: unknown) => void;
 }) {
   const blocks = message.blocks ?? [];
-  const itineraryIndices = useMemo(() => {
+  const tripIndices = useMemo(() => {
     const out: number[] = [];
     blocks.forEach((b, i) => {
-      if (b.type === "json" && looksLikeItinerary(b.data)) out.push(i);
+      if (b.type === "json" && looksLikeTrip(b.data)) out.push(i);
     });
     return out;
   }, [blocks]);
-  const itineraryCount = itineraryIndices.length;
+  const tripCount = tripIndices.length;
 
-  const [visibleItineraryCount, setVisibleItineraryCount] = useState(ITINERARY_PAGE_SIZE);
+  const [visibleTripCount, setVisibleTripCount] = useState(TRIP_PAGE_SIZE);
 
   useEffect(() => {
-    setVisibleItineraryCount(ITINERARY_PAGE_SIZE);
+    setVisibleTripCount(TRIP_PAGE_SIZE);
   }, [message.id]);
 
-  const visibleItineraryBlockIndices = useMemo(
-    () => new Set(itineraryIndices.slice(0, visibleItineraryCount)),
-    [itineraryIndices, visibleItineraryCount]
+  const visibleTripBlockIndices = useMemo(
+    () => new Set(tripIndices.slice(0, visibleTripCount)),
+    [tripIndices, visibleTripCount]
   );
 
-  const hiddenItineraryCount = Math.max(0, itineraryCount - visibleItineraryCount);
-  const canShowMore = hiddenItineraryCount > 0;
+  const hiddenTripCount = Math.max(0, tripCount - visibleTripCount);
+  const canShowMore = hiddenTripCount > 0;
 
   const renderJsonBlock = (i: number): ReactNode => {
     const block = blocks[i];
     if (block.type !== "json") return null;
-    if (looksLikeItinerary(block.data) && !visibleItineraryBlockIndices.has(i)) {
+    if (looksLikeTrip(block.data) && !visibleTripBlockIndices.has(i)) {
       return null;
     }
-    const isItin = looksLikeItinerary(block.data);
+    const isTrip = looksLikeTrip(block.data);
     const copyBar =
-      (!isItin || isDebugPanelOpen) && (
+      (!isTrip || isDebugPanelOpen) && (
         <div
           className="flex items-center justify-end gap-2 border-b border-border px-2 py-1.5"
-          onClick={isItin ? (e) => e.stopPropagation() : undefined}
+          onClick={isTrip ? (e) => e.stopPropagation() : undefined}
         >
           <button
             type="button"
@@ -207,25 +209,25 @@ function AssistantMessageBlocks({
         </div>
       );
 
-    if (isItin) {
+    if (isTrip) {
       return (
         <div
           key={i}
           role="button"
           tabIndex={0}
-          onClick={() => onOpenItineraryModal(block.data)}
+          onClick={() => onOpenTripModal(block.data)}
           onKeyDown={(e) => {
             if (e.key === "Enter" || e.key === " ") {
               e.preventDefault();
-              onOpenItineraryModal(block.data);
+              onOpenTripModal(block.data);
             }
           }}
           className="min-w-0 cursor-pointer rounded-lg border border-border bg-background/50 text-left overflow-x-auto outline-none transition-colors hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-border"
-          aria-label="Open itinerary in modal"
+          aria-label="Open trip in modal"
         >
           {copyBar}
           <div className="pointer-events-none p-3">
-            <ItineraryCard data={block.data} />
+            <TripCard data={block.data} />
           </div>
         </div>
       );
@@ -248,16 +250,16 @@ function AssistantMessageBlocks({
   let i = 0;
   while (i < blocks.length) {
     const b = blocks[i];
-    if (b.type === "json" && looksLikeItinerary(b.data)) {
+    if (b.type === "json" && looksLikeTrip(b.data)) {
       const runStart = i;
       const runIndices: number[] = [];
-      while (i < blocks.length && blocks[i].type === "json" && looksLikeItinerary(blocks[i].data)) {
+      while (i < blocks.length && blocks[i].type === "json" && looksLikeTrip(blocks[i].data)) {
         runIndices.push(i);
         i++;
       }
       renderedBlocks.push(
         <div
-          key={`itinerary-grid-${runStart}`}
+          key={`trip-grid-${runStart}`}
           className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 min-w-0"
         >
           {runIndices.map((idx) => renderJsonBlock(idx))}
@@ -286,10 +288,10 @@ function AssistantMessageBlocks({
         <div className="flex justify-center pt-2">
           <button
             type="button"
-            onClick={() => setVisibleItineraryCount((c) => c + ITINERARY_PAGE_SIZE)}
+            onClick={() => setVisibleTripCount((c) => c + TRIP_PAGE_SIZE)}
             className="inline-flex items-center gap-1 rounded-full border border-border bg-surface px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
           >
-            Show more… ({hiddenItineraryCount} more)
+            Show more… ({hiddenTripCount} more)
           </button>
         </div>
       )}
@@ -373,8 +375,23 @@ const isStatusMessage = (value: unknown): value is StatusMessage => {
   );
 };
 
-/** Reads `prompt_id` from itinerary payloads (root or nested under ranked_itinerary / itinerary / data / ranked). */
-function extractPromptIdFromItineraryPayload(value: unknown): string | undefined {
+/** Reads `structured_request.output.missing_info` from a `missing_info` websocket payload. */
+function extractMissingInfoText(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const root = payload as Record<string, unknown>;
+  const sr = root.structured_request;
+  if (typeof sr !== "object" || sr === null) return undefined;
+  const output = (sr as Record<string, unknown>).output;
+  if (typeof output !== "object" || output === null) return undefined;
+  const mi = (output as Record<string, unknown>).missing_info;
+  if (typeof mi === "string") return mi;
+  if (mi != null && typeof mi === "object") return JSON.stringify(mi, null, 2);
+  if (mi != null) return String(mi);
+  return undefined;
+}
+
+/** Reads `prompt_id` from trip payloads (root or nested under ranked_trip / trip / legacy ranked_itinerary / itinerary / data / ranked). */
+function extractPromptIdFromTripPayload(value: unknown): string | undefined {
   const fromObject = (obj: Record<string, unknown>): string | undefined => {
     const raw = obj.prompt_id;
     if (typeof raw === "string" && raw.trim()) return raw.trim();
@@ -385,7 +402,8 @@ function extractPromptIdFromItineraryPayload(value: unknown): string | undefined
     const o = value as Record<string, unknown>;
     const direct = fromObject(o);
     if (direct) return direct;
-    const nested = o.ranked_itinerary ?? o.itinerary ?? o.data ?? o.ranked;
+    const nested =
+      o.ranked_trip ?? o.trip ?? o.ranked_itinerary ?? o.itinerary ?? o.data ?? o.ranked;
     if (nested && typeof nested === "object" && !Array.isArray(nested)) {
       return fromObject(nested as Record<string, unknown>);
     }
@@ -402,23 +420,21 @@ export default function Home() {
   const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(65);
   const [isDebugPanelOpen, setIsDebugPanelOpen] = useState(false);
   const lastLeftPaneWidthPercentRef = useRef(leftPaneWidthPercent);
-  /** Sentinel for optional scroll anchoring; not used for auto-scroll on itinerary updates. */
+  /** Sentinel for optional scroll anchoring; not used for auto-scroll on trip updates. */
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const debugPanelScrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  /** Last `prompt_id` from an itinerary JSON payload; sent on the next ItineraryRequest. */
+  /** Last `prompt_id` from a trip JSON payload; sent on the next request. */
   const lastPromptIdRef = useRef<string | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
-  const [itineraryModal, setItineraryModal] = useState<{ data: unknown; mountKey: number } | null>(
-    null
-  );
+  const [tripModal, setTripModal] = useState<{ data: unknown; mountKey: number } | null>(null);
 
-  const openItineraryModal = useCallback((data: unknown) => {
-    setItineraryModal((prev) => ({
+  const openTripModal = useCallback((data: unknown) => {
+    setTripModal((prev) => ({
       data,
       mountKey: (prev?.mountKey ?? 0) + 1,
     }));
@@ -509,6 +525,7 @@ export default function Home() {
       content: "",
       blocks: [],
       statusText: undefined,
+      missingInfoText: undefined,
     };
 
     if (continuingSamePromptId) {
@@ -525,14 +542,14 @@ export default function Home() {
     setIsConnecting(true);
 
     // Establish WebSocket connection
-    const wsUrl = `${INGRESS_API}/api/v1/itinerary`;
+    const wsUrl = `${INGRESS_API}/api/v1/trip`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnecting(false);
       setIsStreaming(true);
-      // Send request payload matching backend ItineraryRequest schema
+      // Send request payload matching backend trip request schema
       ws.send(
         JSON.stringify({
           id: null,
@@ -544,7 +561,7 @@ export default function Home() {
 
     ws.onmessage = (event) => {
       const rawData = typeof event.data === "string" ? event.data : String(event.data);
-      console.log("Itinerary websocket message:", rawData);
+      console.log("Trip websocket message:", rawData);
       let parsedData: unknown = null;
       try {
         parsedData = JSON.parse(rawData);
@@ -601,12 +618,33 @@ export default function Home() {
         return;
       }
 
-      const newBlock: ItineraryBlock =
+      if (messageType === "missing_info") {
+        const missingText = extractMissingInfoText(parsedData) ?? "";
+        if (parsedData !== null) {
+          const pid = extractPromptIdFromTripPayload(parsedData);
+          if (pid !== undefined) lastPromptIdRef.current = pid;
+        }
+        setIsStreaming(false);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  missingInfoText: missingText,
+                  statusText: undefined,
+                }
+              : msg
+          )
+        );
+        return;
+      }
+
+      const newBlock: TripBlock =
         parsedData !== null
           ? { type: "json", data: parsedData }
           : { type: "text", data: rawData };
       if (parsedData !== null) {
-        const pid = extractPromptIdFromItineraryPayload(parsedData);
+        const pid = extractPromptIdFromTripPayload(parsedData);
         if (pid !== undefined) lastPromptIdRef.current = pid;
       }
       setIsStreaming(false);
@@ -702,7 +740,7 @@ export default function Home() {
           style={{ width: isDebugPanelOpen ? `${leftPaneWidthPercent}%` : "100%" }}
         >
           <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
-            Itinerary
+            Trip
           </div>
           <div className="flex-1 overflow-y-auto">
             {messages.length === 0 ? (
@@ -764,18 +802,33 @@ export default function Home() {
                             isConnecting={isConnecting}
                             isStreaming={isStreaming}
                             isDebugPanelOpen={isDebugPanelOpen}
-                            onOpenItineraryModal={openItineraryModal}
+                            onOpenTripModal={openTripModal}
                           />
                         )}
+                        {message.role === "assistant" &&
+                          message.missingInfoText !== undefined &&
+                          message.missingInfoText !== "" && (
+                            <div
+                              className="rounded-lg border border-border bg-background/50 p-3 text-left"
+                              role="region"
+                              aria-label="Missing information"
+                            >
+                              <p className="mb-2 text-xs font-medium text-muted">Missing information</p>
+                              <div className="whitespace-pre-wrap text-sm text-foreground">
+                                {message.missingInfoText}
+                              </div>
+                            </div>
+                          )}
                         {message.role === "assistant" &&
                           (!message.blocks || message.blocks.length === 0) && (
                             <>
                               {message.content && (
                                 <span className="whitespace-pre-wrap">{message.content}</span>
                               )}
-                              {(isConnecting || isStreaming) && (
-                                <span className="inline-block animate-pulse">▊</span>
-                              )}
+                              {(isConnecting || isStreaming) &&
+                                message.missingInfoText === undefined && (
+                                  <span className="inline-block animate-pulse">▊</span>
+                                )}
                             </>
                           )}
                         {message.role === "assistant" && message.statusText && (
@@ -888,11 +941,11 @@ export default function Home() {
         </p>
       </footer>
 
-      {itineraryModal != null && (
-        <ItineraryModal
-          data={itineraryModal.data}
-          mountKey={itineraryModal.mountKey}
-          onClose={() => setItineraryModal(null)}
+      {tripModal != null && (
+        <TripModal
+          data={tripModal.data}
+          mountKey={tripModal.mountKey}
+          onClose={() => setTripModal(null)}
           isDebugPanelOpen={isDebugPanelOpen}
           copyJsonToClipboard={copyJsonToClipboard}
           copiedBlockKey={copiedBlockKey}
