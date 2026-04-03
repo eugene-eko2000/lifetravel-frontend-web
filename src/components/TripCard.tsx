@@ -33,6 +33,23 @@ function useTripCurrency(): string | undefined {
   return useContext(TripCurrencyContext);
 }
 
+/** From `ranked_trip.flight_dictionaries.locations` + `locations_dictionary` (and legacy `airport_dictionaries`). */
+export type TripLocationMaps = {
+  airportToCityMeta: Record<string, { cityCode?: string; countryCode?: string }>;
+  cityCodeToName: Record<string, string>;
+};
+
+const EMPTY_LOCATION_MAPS: TripLocationMaps = {
+  airportToCityMeta: {},
+  cityCodeToName: {},
+};
+
+const TripLocationMapsContext = createContext<TripLocationMaps>(EMPTY_LOCATION_MAPS);
+
+function useTripLocationMaps(): TripLocationMaps {
+  return useContext(TripLocationMapsContext);
+}
+
 type UnknownRecord = Record<string, unknown>;
 /** Inset for expanded flight/hotel option lists under a leg row. */
 const LEG_OPTION_PANEL_CLASS = "border-t border-border bg-background/25 pl-3 pr-3 py-2 space-y-2 rounded-b-lg";
@@ -630,6 +647,39 @@ function pickRecord(obj: UnknownRecord, keys: string[]): UnknownRecord | undefin
   return undefined;
 }
 
+/** Reads `locations_dictionary` and airport→city meta from `flight_dictionaries.locations` or `airport_dictionaries`. */
+function extractTripLocationMaps(ranked: UnknownRecord): TripLocationMaps {
+  const cityCodeToName: Record<string, string> = {};
+  const locDict = pickRecord(ranked, ["locations_dictionary"]);
+  if (locDict) {
+    for (const [k, v] of Object.entries(locDict)) {
+      if (typeof v === "string" && v.trim()) cityCodeToName[k] = v.trim();
+    }
+  }
+
+  const airportToCityMeta: Record<string, { cityCode?: string; countryCode?: string }> = {};
+  const mergeAirportMap = (m: UnknownRecord | undefined) => {
+    if (!m) return;
+    for (const [code, v] of Object.entries(m)) {
+      if (!isObject(v)) continue;
+      const o = v as UnknownRecord;
+      airportToCityMeta[code] = {
+        cityCode: pickString(o, ["cityCode", "city_code"]),
+        countryCode: pickString(o, ["countryCode", "country_code"]),
+      };
+    }
+  };
+
+  const fd = pickRecord(ranked, ["flight_dictionaries"]);
+  const locFromFlight = fd ? pickRecord(fd, ["locations"]) : undefined;
+  mergeAirportMap(locFromFlight);
+  if (Object.keys(airportToCityMeta).length === 0) {
+    mergeAirportMap(pickRecord(ranked, ["airport_dictionaries"]));
+  }
+
+  return { airportToCityMeta, cityCodeToName };
+}
+
 function asIsoDate(value: unknown): string | undefined {
   return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : undefined;
 }
@@ -937,8 +987,54 @@ function getSegmentEndpointIata(seg: UnknownRecord, side: "departure" | "arrival
   return pickString(ep, ["iataCode", "iata"]);
 }
 
-/** One summary line per Amadeus-style itinerary (first → last segment of that itinerary). */
-function formatSingleItinerarySummaryLine(itin: UnknownRecord): string | undefined {
+/** `from` / `to` on flight records: resolve to a single city name for headers. */
+function resolveFlightHeaderPlaceLabel(code: string | undefined, maps: TripLocationMaps): string | undefined {
+  if (!code?.trim()) return undefined;
+  const c = code.trim();
+  const byCity = maps.cityCodeToName[c];
+  if (byCity) return byCity;
+  const meta = maps.airportToCityMeta[c];
+  if (meta?.cityCode) {
+    const name = maps.cityCodeToName[meta.cityCode];
+    if (name) return name;
+    return meta.cityCode;
+  }
+  return c;
+}
+
+/** City name only for itinerary summary (segment endpoints); dictionaries first, then inline `cityName`. */
+function getCityNameForSegmentEndpoint(
+  airportIata: string | undefined,
+  maps: TripLocationMaps,
+  seg: UnknownRecord,
+  side: "departure" | "arrival"
+): string {
+  if (airportIata) {
+    const meta = maps.airportToCityMeta[airportIata];
+    const cityIata = meta?.cityCode;
+    if (cityIata) {
+      const name = maps.cityCodeToName[cityIata];
+      if (name) return name;
+    }
+  }
+  const ep = getSegmentEndpoint(seg, side);
+  if (ep) {
+    const inline = pickString(ep, ["cityName", "city"]);
+    if (inline) return inline;
+  }
+  return airportIata ?? "";
+}
+
+/**
+ * One summary line per Amadeus-style itinerary (first → last segment).
+ * `city`: overall flight headers — city names only.
+ * `airport`: individual fare-option headers — airport IATA codes.
+ */
+function formatSingleItinerarySummaryLine(
+  itin: UnknownRecord,
+  maps: TripLocationMaps,
+  placeStyle: "city" | "airport" = "city"
+): string | undefined {
   const segs = (pickArray(itin, ["segments"]) ?? []).filter(isObject) as UnknownRecord[];
   if (segs.length === 0) return undefined;
   const first = segs[0];
@@ -949,15 +1045,43 @@ function formatSingleItinerarySummaryLine(itin: UnknownRecord): string | undefin
   const dep = formatFlightEndpointFromNestedEndpoint(first, "departure", formatFlightDateOnly);
   const arr = formatFlightEndpointFromNestedEndpoint(last, "arrival", formatFlightDateOnly);
   if (!dep || !arr) return undefined;
-  return `${o} - ${d} ${dep} - ${arr}`;
+  const origin =
+    placeStyle === "airport"
+      ? o
+      : getCityNameForSegmentEndpoint(o, maps, first, "departure");
+  const dest =
+    placeStyle === "airport" ? d : getCityNameForSegmentEndpoint(d, maps, last, "arrival");
+  return `${origin} - ${dest} ${dep} - ${arr}`;
 }
 
 /** Non-empty only when `record.itineraries` has 2+ items (round-trip / multi-city in one offer). */
-function getMultiItinerarySummaryLines(record: UnknownRecord): string[] | undefined {
+function getMultiItinerarySummaryLines(
+  record: UnknownRecord,
+  maps: TripLocationMaps,
+  placeStyle: "city" | "airport" = "city"
+): string[] | undefined {
   const itins = (pickArray(record, ["itineraries"]) ?? []).filter(isObject) as UnknownRecord[];
   if (itins.length <= 1) return undefined;
-  const lines = itins.map(formatSingleItinerarySummaryLine).filter((x): x is string => Boolean(x));
+  const lines = itins
+    .map((itin) => formatSingleItinerarySummaryLine(itin, maps, placeStyle))
+    .filter((x): x is string => Boolean(x));
   return lines.length > 0 ? lines : undefined;
+}
+
+/** Airport IATA codes for a fare option route line (first departure → last arrival in flattened segments). */
+function pickFlightOptionRouteAirportCodes(opt: UnknownRecord, parentFlight: UnknownRecord): { from?: string; to?: string } {
+  const flat = collectSegmentsFromRecord(opt);
+  if (flat.length >= 1) {
+    return {
+      from: getSegmentEndpointIata(flat[0], "departure"),
+      to: getSegmentEndpointIata(flat[flat.length - 1], "arrival"),
+    };
+  }
+  const from =
+    pickString(opt, ["from", "origin", "departure_city"]) ?? pickString(parentFlight, ["from", "origin"]);
+  const to =
+    pickString(opt, ["to", "destination", "arrival_city"]) ?? pickString(parentFlight, ["to", "destination"]);
+  return { from, to };
 }
 
 function itineraryGroupLabel(groupIndex: number, groupCount: number): string {
@@ -965,15 +1089,34 @@ function itineraryGroupLabel(groupIndex: number, groupCount: number): string {
   return `Leg ${groupIndex + 1}`;
 }
 
-function formatAirportLine(seg: UnknownRecord, side: "departure" | "arrival"): string {
+function formatAirportLineWithMaps(seg: UnknownRecord, side: "departure" | "arrival", maps: TripLocationMaps): string {
   const ep = getSegmentEndpoint(seg, side);
   if (!ep) return "—";
   const iata = pickString(ep, ["iataCode", "iata"]);
-  const city = pickString(ep, ["cityName", "city"]);
   const terminal = pickString(ep, ["terminal"]);
-  const parts = [iata, city].filter(Boolean);
+  const inlineCity = pickString(ep, ["cityName", "city"]);
+
+  let cityName: string | undefined;
+  if (iata && maps.airportToCityMeta[iata]) {
+    const cityIata = maps.airportToCityMeta[iata].cityCode;
+    if (cityIata) cityName = maps.cityCodeToName[cityIata];
+  }
+  if (!cityName) cityName = inlineCity;
+
+  const parts: string[] = [];
+  if (iata) parts.push(iata);
+  if (cityName) parts.push(cityName);
   if (terminal) parts.push(`Terminal ${terminal}`);
   return parts.join(" · ") || "—";
+}
+
+/** Resolved city name for hotel stays (`locations_dictionary` is keyed by city code); falls back to code. */
+function formatHotelCityLine(cityCode: string | undefined, maps: TripLocationMaps): string {
+  if (!cityCode?.trim()) return "";
+  const code = cityCode.trim();
+  const name = maps.cityCodeToName[code];
+  if (name) return name;
+  return code;
 }
 
 function formatSegmentCarrier(seg: UnknownRecord): string {
@@ -1171,12 +1314,10 @@ function FlightOptionBox({
   parentFlightIndex: number;
 }) {
   const tripCurrency = useTripCurrency();
+  const maps = useTripLocationMaps();
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const from =
-    pickString(opt, ["from", "origin", "departure_city"]) ?? pickString(parentFlight, ["from", "origin"]);
-  const to =
-    pickString(opt, ["to", "destination", "arrival_city"]) ?? pickString(parentFlight, ["to", "destination"]);
-  const routeTitle = [from, to].filter(Boolean).join(" → ");
+  const routeAirports = pickFlightOptionRouteAirportCodes(opt, parentFlight);
+  const routeTitle = [routeAirports.from, routeAirports.to].filter(Boolean).join(" → ");
   const airline = pickString(opt, ["airline", "carrier", "validating_airline", "marketing_airline"]);
   const flightNo = pickString(opt, ["flight_number", "number", "flight"]);
   const title =
@@ -1190,7 +1331,9 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const multiItinLines = getMultiItinerarySummaryLines(opt) ?? getMultiItinerarySummaryLines(parentFlight);
+  const multiItinLines =
+    getMultiItinerarySummaryLines(opt, maps, "airport") ??
+    getMultiItinerarySummaryLines(parentFlight, maps, "airport");
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -1468,6 +1611,7 @@ function HotelOptionBox({
   parentHotelIndex: number;
 }) {
   const tripCurrency = useTripCurrency();
+  const maps = useTripLocationMaps();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const h = isObject(opt.hotel) ? (opt.hotel as UnknownRecord) : undefined;
   const name = h ? pickString(h, ["name", "chain", "brand"]) : undefined;
@@ -1488,7 +1632,8 @@ function HotelOptionBox({
     .filter(Boolean)
     .join(" → ");
 
-  const secondLineCity = cityCode ?? parentCity;
+  const rawCity = cityCode ?? parentCity;
+  const secondLineCity = rawCity ? formatHotelCityLine(rawCity, maps) : undefined;
   const hasSecondLine = secondLineCity || hotelParts;
 
   const detailId = `hotel-${parentHotelIndex}-opt-${optionIndex}`;
@@ -1708,8 +1853,9 @@ function FlightSegmentFallback({ flight }: { flight: UnknownRecord }) {
 }
 
 function FlightSegmentConnectionRow({ prev, next }: { prev: UnknownRecord; next: UnknownRecord }) {
+  const maps = useTripLocationMaps();
   const layover = formatConnectionLayover(prev, next);
-  const hub = formatAirportLine(next, "departure");
+  const hub = formatAirportLineWithMaps(next, "departure", maps);
   if (!layover) return null;
   return (
     <div className="rounded-md border border-dashed border-border/60 bg-background/20 px-3 py-2 text-xs">
@@ -1737,11 +1883,12 @@ function FlightSegmentCard({
   segmentIndexInLeg?: number;
   segmentCountInLeg?: number;
 }) {
+  const maps = useTripLocationMaps();
   const dep = formatFlightEndpointFromNestedEndpoint(seg, "departure");
   const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
   const carrier = formatSegmentCarrier(seg);
-  const depLoc = formatAirportLine(seg, "departure");
-  const arrLoc = formatAirportLine(seg, "arrival");
+  const depLoc = formatAirportLineWithMaps(seg, "departure", maps);
+  const arrLoc = formatAirportLineWithMaps(seg, "arrival", maps);
 
   const cabinLabel = fareDetail ? formatCabinClassLabel(fareDetail.cabin) : undefined;
   const checkedBags = fareDetail ? formatFareBagsLine(pickFareBagsField(fareDetail, "checked")) : undefined;
@@ -1897,16 +2044,19 @@ function FlightRow({
   onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const maps = useTripLocationMaps();
   const from = pickString(flight, ["from"]);
   const to = pickString(flight, ["to"]);
   const options = pickArray(flight, ["options"]) ?? [];
   const objectOptions = options.filter(isObject) as UnknownRecord[];
 
-  const title = [from, to].filter(Boolean).join(" → ") || `Flight ${labelIndex + 1}`;
+  const title =
+    [resolveFlightHeaderPlaceLabel(from, maps), resolveFlightHeaderPlaceLabel(to, maps)].filter(Boolean).join(" → ") ||
+    `Flight ${labelIndex + 1}`;
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   const previewSource = objectOptions[0] ?? flight;
-  const multiItinLines = getMultiItinerarySummaryLines(previewSource);
+  const multiItinLines = getMultiItinerarySummaryLines(previewSource, maps);
   const departSummary = formatFlightEndpointDisplay(flight, "departure", true);
   const arriveSummary = formatFlightEndpointDisplay(flight, "arrival", true);
   const dateSummary = [departSummary, arriveSummary].filter(Boolean).join(" → ");
@@ -2006,11 +2156,14 @@ function HotelRow({
   onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const maps = useTripLocationMaps();
   const cityCode = pickString(stay, ["city_code", "city"]);
   const options = pickArray(stay, ["options"]) ?? [];
   const objectOptions = options.filter(isObject) as UnknownRecord[];
 
-  const title = cityCode ? `Hotels · ${cityCode}` : `Hotel ${labelIndex + 1}`;
+  const title = cityCode
+    ? `Hotels · ${formatHotelCityLine(cityCode, maps)}`
+    : `Hotel ${labelIndex + 1}`;
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   return (
@@ -2201,8 +2354,11 @@ function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; ranked:
     return f.length > 0 || h.length > 0;
   });
 
+  const locationMaps = useMemo(() => extractTripLocationMaps(rankedState), [rankedState]);
+
   return (
     <TripCurrencyContext.Provider value={tripCurrency}>
+      <TripLocationMapsContext.Provider value={locationMaps}>
       <div className="rounded-xl border border-border bg-surface p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
@@ -2294,6 +2450,7 @@ function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; ranked:
         </div>
         )}
       </div>
+      </TripLocationMapsContext.Provider>
     </TripCurrencyContext.Provider>
   );
 }
