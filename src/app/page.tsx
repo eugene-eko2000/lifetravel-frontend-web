@@ -918,7 +918,7 @@ export default function Home() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Please describe in a free form your travel plan..."
+            placeholder="Please describe your travel plan in a free form..."
             rows={1}
             className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent text-left text-sm text-foreground placeholder-muted outline-none"
             disabled={isConnecting}
@@ -936,9 +936,11 @@ export default function Home() {
             />
           </button>
         </form>
-        <p className="mx-auto mt-2 max-w-3xl text-left text-xs text-muted">
-          Press Enter to send, Shift+Enter for a new line
-        </p>
+        {input.trim() ? (
+          <p className="mx-auto mt-2 max-w-3xl text-left text-xs text-muted">
+            Press Enter to send, Shift+Enter for a new line
+          </p>
+        ) : null}
       </footer>
 
       {tripModal != null && (
