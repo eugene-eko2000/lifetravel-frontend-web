@@ -355,7 +355,8 @@ export function formatSingleItinerarySummaryLine(
       : getCityNameForSegmentEndpoint(o, maps, first, "departure");
   const dest =
     placeStyle === "airport" ? d : getCityNameForSegmentEndpoint(d, maps, last, "arrival");
-  return `${origin} - ${dest} ${dep} - ${arr}`;
+  const datePart = dep === arr ? dep : `${dep} - ${arr}`;
+  return `${origin} - ${dest} ${datePart}`;
 }
 
 /** Non-empty only when `record.itineraries` has 2+ items (round-trip / multi-city in one offer). */
@@ -622,6 +623,124 @@ export function getPerLegDurationAndStops(record: UnknownRecord): { durationMinu
       durationMinutesFromDurationField(record) ?? sumSegmentDurationMinutes(segs),
     stops: Math.max(0, segs.length - 1),
   }));
+}
+
+function formatEndpointTimeOnly(seg: UnknownRecord, side: "departure" | "arrival"): string | undefined {
+  const ep = getSegmentEndpoint(seg, side);
+  if (!ep) return undefined;
+  const raw = pickString(ep, ["at", "dateTime", "localDateTime", "datetime"]);
+  if (!raw) return undefined;
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return undefined;
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** Structured columns for fare-option flight headers (route, schedule, duration, stops). */
+export type FlightLegHeaderParts = {
+  route: string;
+  /** Date & time window for the leg. */
+  schedule: string;
+  duration: string;
+  stops: string;
+};
+
+/**
+ * Same calendar day for dep/arr: `date depTime - arrTime`; else `depDate depTime - arrDate arrTime`.
+ */
+export function getFlightLegHeaderParts(
+  firstSeg: UnknownRecord,
+  lastSeg: UnknownRecord,
+  maps: TripLocationMaps,
+  leg: { durationMinutes?: number; stops: number },
+  placeStyle: "city" | "airport"
+): FlightLegHeaderParts | undefined {
+  const o = getSegmentEndpointIata(firstSeg, "departure");
+  const d = getSegmentEndpointIata(lastSeg, "arrival");
+  if (!o || !d) return undefined;
+  const origin =
+    placeStyle === "airport"
+      ? o
+      : getCityNameForSegmentEndpoint(o, maps, firstSeg, "departure");
+  const dest =
+    placeStyle === "airport" ? d : getCityNameForSegmentEndpoint(d, maps, lastSeg, "arrival");
+  const route = `${origin} - ${dest}`;
+
+  const depDateStr = formatFlightEndpointFromNestedEndpoint(firstSeg, "departure", formatFlightDateOnly);
+  const arrDateStr = formatFlightEndpointFromNestedEndpoint(lastSeg, "arrival", formatFlightDateOnly);
+  const depTime = formatEndpointTimeOnly(firstSeg, "departure");
+  const arrTime = formatEndpointTimeOnly(lastSeg, "arrival");
+
+  let schedule: string;
+  if (depDateStr && arrDateStr && depDateStr === arrDateStr) {
+    const t1 = depTime ?? "";
+    const t2 = arrTime ?? "";
+    schedule = `${depDateStr} ${t1} - ${t2}`.replace(/\s+/g, " ").trim();
+  } else {
+    const left = [depDateStr, depTime].filter(Boolean).join(" ");
+    const right = [arrDateStr, arrTime].filter(Boolean).join(" ");
+    schedule = `${left} - ${right}`.trim();
+  }
+  if (!schedule || schedule === "-") schedule = "—";
+
+  const duration =
+    leg.durationMinutes != null ? formatDurationMinutesAsHoursMinutes(leg.durationMinutes) : "—";
+  const stops = `${leg.stops} ${leg.stops === 1 ? "stop" : "stops"}`;
+
+  return { route, schedule, duration, stops };
+}
+
+/** Plain line for logs / debugging; same content as joined columns. */
+export function formatFlightLegHeaderLine(
+  firstSeg: UnknownRecord,
+  lastSeg: UnknownRecord,
+  maps: TripLocationMaps,
+  leg: { durationMinutes?: number; stops: number },
+  placeStyle: "city" | "airport"
+): string | undefined {
+  const p = getFlightLegHeaderParts(firstSeg, lastSeg, maps, leg, placeStyle);
+  if (!p) return undefined;
+  return `${p.route} | ${p.schedule} | ${p.duration} | ${p.stops}`;
+}
+
+/**
+ * Header row(s) for a fare option vs parent flight (same source resolution as UI).
+ * Airport labels in option cards.
+ */
+export function getFlightLegHeadersFromOffer(
+  opt: UnknownRecord,
+  parentFlight: UnknownRecord,
+  maps: TripLocationMaps,
+  placeStyle: "city" | "airport"
+): FlightLegHeaderParts[] {
+  const linesFromOpt = getMultiItinerarySummaryLines(opt, maps, placeStyle);
+  const linesFromParent = getMultiItinerarySummaryLines(parentFlight, maps, placeStyle);
+  const multiItinSource =
+    linesFromOpt != null && linesFromOpt.length > 1
+      ? opt
+      : linesFromParent != null && linesFromParent.length > 1
+        ? parentFlight
+        : opt;
+  const record = multiItinSource;
+  const legDurationStops = getPerLegDurationAndStops(record);
+
+  const itins = (pickArray(record, ["itineraries"]) ?? []).filter(isObject) as UnknownRecord[];
+  if (itins.length > 1) {
+    return itins
+      .map((itin, i) => {
+        const segs = (pickArray(itin, ["segments"]) ?? []).filter(isObject) as UnknownRecord[];
+        const leg = legDurationStops[i] ?? { stops: 0 };
+        if (segs.length === 0) return undefined;
+        return getFlightLegHeaderParts(segs[0], segs[segs.length - 1], maps, leg, placeStyle);
+      })
+      .filter((x): x is FlightLegHeaderParts => Boolean(x));
+  }
+
+  const groups = collectSegmentGroupsFromRecord(record);
+  const g0 = groups[0];
+  if (!g0?.length) return [];
+  const leg = legDurationStops[0] ?? { stops: Math.max(0, g0.length - 1) };
+  const row = getFlightLegHeaderParts(g0[0], g0[g0.length - 1], maps, leg, placeStyle);
+  return row ? [row] : [];
 }
 
 export function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): string | null {

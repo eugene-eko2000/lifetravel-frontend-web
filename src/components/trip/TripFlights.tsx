@@ -38,6 +38,8 @@ import {
   formatFlightEndpointFromNestedEndpoint,
   formatSegmentCarrier,
   gatherFlightOfferSourceRecord,
+  getFlightLegHeadersFromOffer,
+  type FlightLegHeaderParts,
   getMultiItinerarySummaryLines,
   getFirstTravelerFareDetailsBySegment,
   buildFareDetailBySegmentId,
@@ -46,20 +48,10 @@ import {
   pickFareBagsField,
   pickFlightOptionRouteAirportCodes,
   resolveFlightHeaderPlaceLabel,
-  getPerLegDurationAndStops,
 } from "./tripFlightFormatting";
 import { SortableOptionRow } from "./SortableOptionRow";
 
-function formatLegDurationStopsLine(leg: { durationMinutes?: number; stops: number }): string {
-  const parts: string[] = [];
-  if (leg.durationMinutes != null) {
-    parts.push(formatDurationMinutesAsHoursMinutes(leg.durationMinutes));
-  }
-  parts.push(`${leg.stops} ${leg.stops === 1 ? "stop" : "stops"}`);
-  return parts.join(" · ");
-}
-
-/** When `priceOnly`, show dual price only (used for multi-itinerary: duration/stops are per leg above). */
+/** When `priceOnly`, show dual price only (header line already includes duration & stops). */
 function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnly?: boolean }) {
   const tripCurrency = useTripCurrency();
   const price = isObject(opt.price) ? (opt.price as UnknownRecord) : undefined;
@@ -88,7 +80,33 @@ function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnl
   );
 }
 
-/** First line matches parent flight row: route (from → to) | dates; falls back to parent segment when option omits fields. */
+function FlightLegHeaderGrid({ rows }: { rows: FlightLegHeaderParts[] }) {
+  return (
+    <div className="min-w-[min(100%,32rem)]">
+      <div className="grid grid-cols-4 gap-2 border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+        <span className="min-w-0">From – to</span>
+        <span className="min-w-0">Date & time</span>
+        <span className="min-w-0">Duration</span>
+        <span className="min-w-0">Stops</span>
+      </div>
+      <div className="divide-y divide-border/40">
+        {rows.map((row, i) => (
+          <div
+            key={i}
+            className="grid grid-cols-4 gap-2 py-2 text-xs sm:text-sm"
+          >
+            <span className="min-w-0 break-words font-medium text-foreground">{row.route}</span>
+            <span className="min-w-0 break-words text-foreground">{row.schedule}</span>
+            <span className="min-w-0 tabular-nums text-muted">{row.duration}</span>
+            <span className="min-w-0 tabular-nums text-muted">{row.stops}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Fare option summary; falls back to title + dates when segment data is missing. */
 function FlightOptionBox({
   opt,
   optionIndex,
@@ -117,19 +135,7 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const linesFromOpt = getMultiItinerarySummaryLines(opt, maps, "airport");
-  const linesFromParent = getMultiItinerarySummaryLines(parentFlight, maps, "airport");
-  const multiItinLines = linesFromOpt ?? linesFromParent;
-  const multiItinSource =
-    linesFromOpt != null && linesFromOpt.length > 1
-      ? opt
-      : linesFromParent != null && linesFromParent.length > 1
-        ? parentFlight
-        : opt;
-  const legDurationStops =
-    multiItinLines != null && multiItinLines.length > 1
-      ? getPerLegDurationAndStops(multiItinSource)
-      : undefined;
+  const headerRows = getFlightLegHeadersFromOffer(opt, parentFlight, maps, "airport");
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -148,24 +154,9 @@ function FlightOptionBox({
           {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          {multiItinLines && multiItinLines.length > 1 ? (
-            <div className="space-y-1">
-              {multiItinLines.map((line, i) => {
-                const leg = legDurationStops?.[i];
-                return (
-                  <div
-                    key={i}
-                    className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"
-                  >
-                    <p className="min-w-0 text-sm font-medium text-foreground leading-snug">{line}</p>
-                    {leg ? (
-                      <span className="shrink-0 text-xs text-muted">
-                        {formatLegDurationStopsLine(leg)}
-                      </span>
-                    ) : null}
-                  </div>
-                );
-              })}
+          {headerRows.length > 0 ? (
+            <div className="overflow-x-auto">
+              <FlightLegHeaderGrid rows={headerRows} />
             </div>
           ) : (
             <div className="flex items-baseline justify-between gap-2">
@@ -173,10 +164,7 @@ function FlightOptionBox({
               {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
             </div>
           )}
-          <FlightOptionMetaLine
-            opt={opt}
-            priceOnly={multiItinLines != null && multiItinLines.length > 1}
-          />
+          <FlightOptionMetaLine opt={opt} priceOnly={headerRows.length > 0} />
         </div>
       </button>
       {detailsOpen && (
@@ -471,7 +459,10 @@ function FlightRow({
   const multiItinLines = getMultiItinerarySummaryLines(previewSource, maps);
   const departSummary = formatFlightEndpointDisplay(flight, "departure", true);
   const arriveSummary = formatFlightEndpointDisplay(flight, "arrival", true);
-  const dateSummary = [departSummary, arriveSummary].filter(Boolean).join(" → ");
+  const dateSummary =
+    departSummary && arriveSummary && departSummary === arriveSummary
+      ? departSummary
+      : [departSummary, arriveSummary].filter(Boolean).join(" → ");
 
   return (
     <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
