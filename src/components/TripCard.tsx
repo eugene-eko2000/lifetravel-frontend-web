@@ -101,9 +101,9 @@ export function TripCard({ data }: { data: unknown }) {
   const days = pickArray(root, ["days", "day_plans", "dayPlans"]) ?? [];
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-4">
+    <div className="max-w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface p-3 sm:p-4">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-foreground">{title}</p>
           {subtitleParts.length > 0 && (
             <p className="mt-0.5 truncate text-xs text-muted">{subtitleParts.join(" • ")}</p>
@@ -126,7 +126,7 @@ export function TripCard({ data }: { data: unknown }) {
                 dayObj && (pickArray(dayObj, ["activities", "items", "plan"]) ?? []);
 
               return (
-                <div key={idx} className="rounded-lg border border-border bg-background/40 p-3">
+                <div key={idx} className="min-w-0 rounded-lg border border-border bg-background/40 p-2.5 sm:p-3">
                   <div className="flex items-baseline justify-between gap-2">
                     <p className="text-sm font-medium text-foreground">{dayTitle}</p>
                     {dayDate && <p className="text-xs text-muted">{dayDate}</p>}

@@ -6,6 +6,7 @@ import {
   useEffect,
   useCallback,
   useMemo,
+  useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -54,6 +55,42 @@ const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080"
 const TRIP_PAGE_SIZE = 10;
 
 const TRIP_MODAL_COPY_KEY = "trip-modal";
+
+/** Viewports below Tailwind `md` use a horizontal splitter (trip above, debug below). */
+const MOBILE_DEBUG_SPLIT_QUERY = "(max-width: 767px)";
+
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false
+  );
+}
+
+/** True when `<main>` is column-stacked (trip above debug); must match CSS `flex-col md:flex-row`. */
+function isSplitStackedLayout(main: HTMLElement): boolean {
+  const dir = getComputedStyle(main).flexDirection;
+  return dir === "column" || dir === "column-reverse";
+}
+
+/** Trip pane size along the split axis (25–80%). Stacked layout uses vertical pointer movement. */
+function getSplitPercentFromPointer(main: HTMLElement, event: PointerEvent): number | null {
+  const rect = main.getBoundingClientRect();
+  const stacked = isSplitStackedLayout(main);
+  let nextPercent: number;
+  if (stacked) {
+    if (!rect.height) return null;
+    nextPercent = ((event.clientY - rect.top) / rect.height) * 100;
+  } else {
+    if (!rect.width) return null;
+    nextPercent = ((event.clientX - rect.left) / rect.width) * 100;
+  }
+  return Math.min(80, Math.max(25, nextPercent));
+}
 
 function TripModal({
   data,
@@ -429,6 +466,7 @@ export default function Home() {
   const lastPromptIdRef = useRef<string | null>(null);
   const splitContainerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
+  const isMobileDebugSplit = useMediaQuery(MOBILE_DEBUG_SPLIT_QUERY);
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [tripModal, setTripModal] = useState<{ data: unknown; mountKey: number } | null>(null);
@@ -482,28 +520,28 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const handleMouseMove = (event: MouseEvent) => {
+    const handlePointerMove = (event: PointerEvent) => {
       if (!isResizingRef.current || !splitContainerRef.current) return;
-      const rect = splitContainerRef.current.getBoundingClientRect();
-      if (!rect.width) return;
-      const nextPercent = ((event.clientX - rect.left) / rect.width) * 100;
-      const clampedPercent = Math.min(80, Math.max(25, nextPercent));
-      setLeftPaneWidthPercent(clampedPercent);
+      const next = getSplitPercentFromPointer(splitContainerRef.current, event);
+      if (next === null) return;
+      setLeftPaneWidthPercent(next);
     };
 
-    const handleMouseUp = () => {
+    const endResize = () => {
       if (!isResizingRef.current) return;
       isResizingRef.current = false;
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", endResize);
+    window.addEventListener("pointercancel", endResize);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", endResize);
+      window.removeEventListener("pointercancel", endResize);
     };
   }, []);
 
@@ -699,11 +737,15 @@ export default function Home() {
     }
   };
 
-  const handleDividerMouseDown = () => {
+  const handleDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isDebugPanelOpen) return;
+    const main = splitContainerRef.current;
+    const stacked = main ? isSplitStackedLayout(main) : isMobileDebugSplit;
     isResizingRef.current = true;
     document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = stacked ? "row-resize" : "col-resize";
+    // Avoid scrolling the pane while dragging the splitter (touch / trackpads).
+    e.preventDefault();
   };
 
   const toggleDebugPanel = () => {
@@ -733,11 +775,28 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Messages Area */}
-      <main ref={splitContainerRef} className="flex min-h-0 flex-1 overflow-hidden">
+      {/* Messages Area — below `md`, debug uses a horizontal split (stacked panes); `md+` keeps left/right. */}
+      <main
+        ref={splitContainerRef}
+        className={`flex min-h-0 flex-1 overflow-hidden ${
+          isDebugPanelOpen ? "flex-col md:flex-row" : ""
+        }`}
+      >
         <section
-          className={`flex min-h-0 flex-col ${isDebugPanelOpen ? "border-r border-border" : ""}`}
-          style={{ width: isDebugPanelOpen ? `${leftPaneWidthPercent}%` : "100%" }}
+          className={`flex min-h-0 flex-col ${
+            isDebugPanelOpen
+              ? isMobileDebugSplit
+                ? "shrink-0 border-b border-border md:border-b-0 md:border-r"
+                : "border-r border-border"
+              : ""
+          }`}
+          style={
+            isDebugPanelOpen
+              ? isMobileDebugSplit
+                ? { width: "100%", height: `${leftPaneWidthPercent}%`, minHeight: 0 }
+                : { width: `${leftPaneWidthPercent}%`, minWidth: 0 }
+              : { width: "100%" }
+          }
         >
           <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
             Trip
@@ -857,13 +916,17 @@ export default function Home() {
           <>
             <div
               role="separator"
-              aria-orientation="vertical"
+              aria-orientation={isMobileDebugSplit ? "horizontal" : "vertical"}
               aria-label="Resize panes"
-              className="w-1 cursor-col-resize bg-border transition-colors hover:bg-muted"
-              onMouseDown={handleDividerMouseDown}
+              className={`shrink-0 touch-none bg-border transition-colors hover:bg-muted ${
+                isMobileDebugSplit
+                  ? "h-1.5 w-full cursor-row-resize md:h-auto md:w-1 md:cursor-col-resize"
+                  : "h-auto w-1 cursor-col-resize"
+              }`}
+              onPointerDown={handleDividerPointerDown}
             />
 
-            <section className="flex min-h-0 min-w-[280px] flex-1 flex-col">
+            <section className="flex min-h-0 min-w-0 flex-1 flex-col md:min-w-[280px]">
               <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
                 Debug
               </div>

@@ -291,14 +291,14 @@ function HotelOptionBox({
   const showDetailsPanel = offer != null;
 
   return (
-    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}
         aria-expanded={detailsOpen}
         aria-controls={showDetailsPanel ? detailId : undefined}
         id={`${detailId}-summary`}
-        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
@@ -324,7 +324,7 @@ function HotelOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-3 py-3"
+          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <HotelStayDetailsPanel offer={offer} />
         </div>
@@ -334,7 +334,7 @@ function HotelOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-3 py-3"
+          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <p className="text-xs text-muted">No offer details available for this stay.</p>
         </div>
@@ -414,23 +414,23 @@ function HotelRow({
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   return (
-    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           open ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
+        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
           {open ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
-            <p className="text-sm font-medium text-foreground">{title}</p>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-2 sm:gap-y-1">
+            <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
             {objectOptions.length > 1 ? (
-              <p className="text-xs text-muted shrink-0">{objectOptions.length} hotel options</p>
+              <p className="shrink-0 text-xs text-muted sm:self-center">{objectOptions.length} hotel options</p>
             ) : null}
           </div>
         </div>
@@ -454,7 +454,7 @@ function HotelRow({
               </div>
             )
           ) : (
-            <p className="pl-3 text-xs text-muted">No hotel options listed.</p>
+            <p className="pl-2.5 text-xs text-muted sm:pl-3">No hotel options listed.</p>
           )}
         </div>
       )}

@@ -62,7 +62,7 @@ function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnl
   const stops = !priceOnly && ranking ? pickNumber(ranking, ["stops"]) : undefined;
   if (parts == null && durationMinutes == null && stops == null) return null;
   return (
-    <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+    <p className="mt-1 flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 break-words text-xs text-muted">
       {parts ? <DualPriceDisplay parts={parts} /> : null}
       {durationMinutes != null ? (
         <>
@@ -82,27 +82,58 @@ function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnl
 
 function FlightLegHeaderGrid({ rows }: { rows: FlightLegHeaderParts[] }) {
   return (
-    <div className="min-w-[min(100%,32rem)]">
-      <div className="grid grid-cols-4 gap-2 border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
-        <span className="min-w-0">From – to</span>
-        <span className="min-w-0">Date & time</span>
-        <span className="min-w-0">Duration</span>
-        <span className="min-w-0">Stops</span>
-      </div>
-      <div className="divide-y divide-border/40">
+    <>
+      {/* Narrow viewports: one card per leg, label/value rows (no horizontal scroll). */}
+      <div className="space-y-2.5 md:hidden">
         {rows.map((row, i) => (
           <div
             key={i}
-            className="grid grid-cols-4 gap-2 py-2 text-xs sm:text-sm"
+            className="rounded-lg border border-border/60 bg-background/30 p-2.5 text-sm shadow-sm"
           >
-            <span className="min-w-0 break-words font-medium text-foreground">{row.route}</span>
-            <span className="min-w-0 break-words text-foreground">{row.schedule}</span>
-            <span className="min-w-0 tabular-nums text-muted">{row.duration}</span>
-            <span className="min-w-0 tabular-nums text-muted">{row.stops}</span>
+            <dl className="space-y-2 text-sm">
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted">From – to</dt>
+                <dd className="min-w-0 break-words font-medium text-foreground">{row.route}</dd>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                <dt className="text-[10px] font-medium uppercase tracking-wide text-muted">Date & time</dt>
+                <dd className="min-w-0 break-words text-foreground">{row.schedule}</dd>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted">Duration</dt>
+                  <dd className="tabular-nums text-muted">{row.duration}</dd>
+                </div>
+                <div className="flex flex-col gap-0.5">
+                  <dt className="text-[10px] font-medium uppercase tracking-wide text-muted">Stops</dt>
+                  <dd className="tabular-nums text-muted">{row.stops}</dd>
+                </div>
+              </div>
+            </dl>
           </div>
         ))}
       </div>
-    </div>
+
+      {/* md+: aligned columns */}
+      <div className="hidden min-w-0 md:block">
+        <div className="grid grid-cols-4 gap-2 border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+          <span className="min-w-0">From – to</span>
+          <span className="min-w-0">Date & time</span>
+          <span className="min-w-0">Duration</span>
+          <span className="min-w-0">Stops</span>
+        </div>
+        <div className="divide-y divide-border/40">
+          {rows.map((row, i) => (
+            <div key={i} className="grid grid-cols-4 gap-2 py-2 text-sm">
+              <span className="min-w-0 break-words font-medium text-foreground">{row.route}</span>
+              <span className="min-w-0 break-words text-foreground">{row.schedule}</span>
+              <span className="min-w-0 tabular-nums text-muted">{row.duration}</span>
+              <span className="min-w-0 tabular-nums text-muted">{row.stops}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -139,25 +170,23 @@ function FlightOptionBox({
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
-    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}
         aria-expanded={detailsOpen}
         aria-controls={detailId}
         id={`${detailId}-summary`}
-        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
+        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
           {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
           {headerRows.length > 0 ? (
-            <div className="overflow-x-auto">
-              <FlightLegHeaderGrid rows={headerRows} />
-            </div>
+            <FlightLegHeaderGrid rows={headerRows} />
           ) : (
             <div className="flex items-baseline justify-between gap-2">
               <p className="text-sm font-medium text-foreground">{title}</p>
@@ -172,7 +201,7 @@ function FlightOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-3 py-3"
+          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <FlightSegmentDetailList flight={parentFlight} segmentsFrom={opt} />
         </div>
@@ -465,22 +494,22 @@ function FlightRow({
       : [departSummary, arriveSummary].filter(Boolean).join(" → ");
 
   return (
-    <div className="w-full min-w-0 rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}
         aria-expanded={detailsOpen}
         aria-controls={`flight-detail-${labelIndex}`}
         id={`flight-summary-${labelIndex}`}
-        className={`w-full flex items-start gap-2 p-3 text-left hover:bg-surface-hover/50 transition-colors ${
+        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
+        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
           {detailsOpen ? "▼" : "▶"}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-2 sm:gap-y-1">
             {multiItinLines && multiItinLines.length > 1 ? (
               <div className="min-w-0 space-y-0.5">
                 {multiItinLines.map((line, i) => (
@@ -501,7 +530,7 @@ function FlightRow({
               </p>
             )}
             {objectOptions.length > 0 ? (
-              <p className="text-xs text-muted shrink-0">
+              <p className="shrink-0 text-xs text-muted sm:self-center">
                 {objectOptions.length === 1 ? "1 fare option" : `${objectOptions.length} fare options`}
               </p>
             ) : null}

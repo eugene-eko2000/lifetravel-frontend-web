@@ -99,9 +99,9 @@ export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; 
   return (
     <TripCurrencyContext.Provider value={tripCurrency}>
       <TripLocationMapsContext.Provider value={locationMaps}>
-      <div className="rounded-xl border border-border bg-surface p-4">
+      <div className="max-w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface p-3 sm:p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-foreground">
               Trip
               {typeof tripIndex === "number" && typeof tripCount === "number"
@@ -118,22 +118,22 @@ export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; 
           hotelsSummaryParts != null ||
           hasHotelOptionsInData) && (
           <div
-            className={`mt-3 grid gap-2 ${hasHotelOptionsInData ? "grid-cols-3" : "grid-cols-2"}`}
+            className={`mt-3 grid gap-2 ${hasHotelOptionsInData ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3" : "grid-cols-1 sm:grid-cols-2"}`}
           >
-            <div className="rounded-lg border border-border bg-background/40 p-2">
+            <div className="min-w-0 rounded-lg border border-border bg-background/40 p-2 sm:p-2.5">
               <p className="text-[10px] text-muted">Dates</p>
               <p className="text-sm font-medium text-foreground">
                 {formatTripSummaryDates(tripStartIso, tripEndIso, totalDays)}
               </p>
             </div>
-            <div className="rounded-lg border border-border bg-background/40 p-2">
+            <div className="min-w-0 rounded-lg border border-border bg-background/40 p-2 sm:p-2.5">
               <p className="text-[10px] text-muted">Flights</p>
               <p className="text-sm font-medium text-foreground">
                 {flightsSummaryParts ? <DualPriceDisplay parts={flightsSummaryParts} /> : "—"}
               </p>
             </div>
             {hasHotelOptionsInData ? (
-              <div className="rounded-lg border border-border bg-background/40 p-2">
+              <div className="min-w-0 rounded-lg border border-border bg-background/40 p-2 sm:p-2.5">
                 <p className="text-[10px] text-muted">Hotels</p>
                 <p className="text-sm font-medium text-foreground">
                   {hotelsSummaryParts ? <DualPriceDisplay parts={hotelsSummaryParts} /> : "—"}
@@ -161,9 +161,12 @@ export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; 
               .join(" → ");
 
             return (
-              <div key={legIdx} className="rounded-lg border border-border/80 bg-background/30 p-3">
+              <div
+                key={legIdx}
+                className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/30 p-2.5 sm:p-3"
+              >
                 {(legLabel || legDates) && (
-                  <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                  <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2 sm:mb-3">
                     {legLabel && <p className="text-sm font-medium text-foreground">{legLabel}</p>}
                     {legDates && <p className="text-xs text-muted">{legDates}</p>}
                   </div>

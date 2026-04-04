@@ -138,7 +138,8 @@ export function formatHotelCityLine(cityCode: string | undefined, maps: TripLoca
 }
 
 /** Inset for expanded flight/hotel option lists under a leg row. */
-export const LEG_OPTION_PANEL_CLASS = "border-t border-border bg-background/25 pl-3 pr-3 py-2 space-y-2 rounded-b-lg";
+export const LEG_OPTION_PANEL_CLASS =
+  "border-t border-border bg-background/25 px-2.5 py-2 space-y-2 rounded-b-lg sm:px-3 sm:py-2.5";
 
 export function randomSortableSuffix(): string {
   const c = globalThis.crypto;
