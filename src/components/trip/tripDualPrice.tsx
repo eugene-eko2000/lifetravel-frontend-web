@@ -18,9 +18,9 @@ export function DualPriceDisplay({ parts }: { parts: DualPriceParts | undefined 
   if (!parts) return null;
   return (
     <span className="inline-flex flex-wrap items-baseline gap-x-1">
-      <span>{parts.primary}</span>
+      <span className="text-base font-bold text-foreground">{parts.primary}</span>
       {parts.original ? (
-        <span className="text-[0.82em] text-muted"> ({parts.original})</span>
+        <span className="text-base font-normal text-muted"> ({parts.original})</span>
       ) : null}
     </span>
   );

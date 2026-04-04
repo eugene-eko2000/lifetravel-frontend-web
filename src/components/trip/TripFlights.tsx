@@ -46,16 +46,28 @@ import {
   pickFareBagsField,
   pickFlightOptionRouteAirportCodes,
   resolveFlightHeaderPlaceLabel,
+  getPerLegDurationAndStops,
 } from "./tripFlightFormatting";
 import { SortableOptionRow } from "./SortableOptionRow";
 
-function FlightOptionMetaLine({ opt }: { opt: UnknownRecord }) {
+function formatLegDurationStopsLine(leg: { durationMinutes?: number; stops: number }): string {
+  const parts: string[] = [];
+  if (leg.durationMinutes != null) {
+    parts.push(formatDurationMinutesAsHoursMinutes(leg.durationMinutes));
+  }
+  parts.push(`${leg.stops} ${leg.stops === 1 ? "stop" : "stops"}`);
+  return parts.join(" · ");
+}
+
+/** When `priceOnly`, show dual price only (used for multi-itinerary: duration/stops are per leg above). */
+function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnly?: boolean }) {
   const tripCurrency = useTripCurrency();
   const price = isObject(opt.price) ? (opt.price as UnknownRecord) : undefined;
   const parts = price ? formatAmadeusDualPriceParts(price, tripCurrency) : undefined;
   const ranking = isObject(opt._ranking) ? (opt._ranking as UnknownRecord) : undefined;
-  const durationMinutes = ranking ? pickNumber(ranking, ["duration_minutes"]) : undefined;
-  const stops = ranking ? pickNumber(ranking, ["stops"]) : undefined;
+  const durationMinutes =
+    !priceOnly && ranking ? pickNumber(ranking, ["duration_minutes"]) : undefined;
+  const stops = !priceOnly && ranking ? pickNumber(ranking, ["stops"]) : undefined;
   if (parts == null && durationMinutes == null && stops == null) return null;
   return (
     <p className="mt-1 text-xs text-muted flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
@@ -105,9 +117,19 @@ function FlightOptionBox({
   const arrive =
     formatFlightEndpointDisplay(opt, "arrival") ?? formatFlightEndpointDisplay(parentFlight, "arrival");
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
-  const multiItinLines =
-    getMultiItinerarySummaryLines(opt, maps, "airport") ??
-    getMultiItinerarySummaryLines(parentFlight, maps, "airport");
+  const linesFromOpt = getMultiItinerarySummaryLines(opt, maps, "airport");
+  const linesFromParent = getMultiItinerarySummaryLines(parentFlight, maps, "airport");
+  const multiItinLines = linesFromOpt ?? linesFromParent;
+  const multiItinSource =
+    linesFromOpt != null && linesFromOpt.length > 1
+      ? opt
+      : linesFromParent != null && linesFromParent.length > 1
+        ? parentFlight
+        : opt;
+  const legDurationStops =
+    multiItinLines != null && multiItinLines.length > 1
+      ? getPerLegDurationAndStops(multiItinSource)
+      : undefined;
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
 
   return (
@@ -128,11 +150,22 @@ function FlightOptionBox({
         <div className="min-w-0 flex-1">
           {multiItinLines && multiItinLines.length > 1 ? (
             <div className="space-y-1">
-              {multiItinLines.map((line, i) => (
-                <p key={i} className="text-sm font-medium text-foreground leading-snug">
-                  {line}
-                </p>
-              ))}
+              {multiItinLines.map((line, i) => {
+                const leg = legDurationStops?.[i];
+                return (
+                  <div
+                    key={i}
+                    className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5"
+                  >
+                    <p className="min-w-0 text-sm font-medium text-foreground leading-snug">{line}</p>
+                    {leg ? (
+                      <span className="shrink-0 text-xs text-muted">
+                        {formatLegDurationStopsLine(leg)}
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="flex items-baseline justify-between gap-2">
@@ -140,7 +173,10 @@ function FlightOptionBox({
               {dateRight ? <p className="text-xs text-muted shrink-0">{dateRight}</p> : null}
             </div>
           )}
-          <FlightOptionMetaLine opt={opt} />
+          <FlightOptionMetaLine
+            opt={opt}
+            priceOnly={multiItinLines != null && multiItinLines.length > 1}
+          />
         </div>
       </button>
       {detailsOpen && (

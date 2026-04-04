@@ -535,6 +535,95 @@ function parseAtFromSegment(seg: UnknownRecord, side: "departure" | "arrival"): 
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Parses Amadeus-style `duration` (ISO 8601 e.g. PT3H25M), numeric minutes, or numeric strings.
+ * Does not derive from departure/arrival instants (avoids timezone skew).
+ */
+function parseDurationFieldToMinutes(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "number" && Number.isFinite(value) && value >= 0) {
+    return Math.round(value);
+  }
+  if (typeof value !== "string") return undefined;
+  const t = value.trim();
+  if (!t) return undefined;
+  const iso = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/i.exec(t);
+  if (iso) {
+    const days = iso[1] ? parseInt(iso[1], 10) : 0;
+    const hours = iso[2] ? parseInt(iso[2], 10) : 0;
+    const minutes = iso[3] ? parseInt(iso[3], 10) : 0;
+    const seconds = iso[4] ? parseFloat(iso[4]) : 0;
+    return Math.round(days * 24 * 60 + hours * 60 + minutes + seconds / 60);
+  }
+  if (/^\d+(\.\d+)?$/.test(t)) {
+    const n = parseFloat(t);
+    return Number.isFinite(n) ? Math.round(n) : undefined;
+  }
+  return undefined;
+}
+
+/** Reads `duration` / `duration_minutes` from an itinerary, segment, or offer-shaped record. */
+function durationMinutesFromDurationField(entity: UnknownRecord): number | undefined {
+  const n = pickNumber(entity, ["duration_minutes", "durationMinutes"]);
+  if (n != null && Number.isFinite(n)) return Math.round(n);
+  const s = pickString(entity, ["duration"]);
+  if (s) return parseDurationFieldToMinutes(s);
+  const raw = pickScalar(entity, ["duration"]);
+  if (raw == null || raw === "") return undefined;
+  return parseDurationFieldToMinutes(raw);
+}
+
+function sumSegmentDurationMinutes(segs: UnknownRecord[]): number | undefined {
+  let sum = 0;
+  let any = false;
+  for (const seg of segs) {
+    const m = durationMinutesFromDurationField(seg);
+    if (m != null) {
+      sum += m;
+      any = true;
+    }
+  }
+  return any ? sum : undefined;
+}
+
+/**
+ * One entry per Amadeus itinerary (e.g. outbound + return for round-trip).
+ * Stops = segments minus one. Duration comes from API `duration` fields only (not from timestamps).
+ */
+export function getPerLegDurationAndStops(record: UnknownRecord): { durationMinutes?: number; stops: number }[] {
+  const itineraries = pickArray(record, ["itineraries"]) ?? [];
+  const objs = itineraries.filter(isObject) as UnknownRecord[];
+
+  if (objs.length > 1) {
+    return objs.map((itin) => {
+      const segs = (pickArray(itin, ["segments"]) ?? []).filter(isObject) as UnknownRecord[];
+      return {
+        durationMinutes: durationMinutesFromDurationField(itin),
+        stops: Math.max(0, segs.length - 1),
+      };
+    });
+  }
+
+  if (objs.length === 1) {
+    const itin = objs[0];
+    const segs = (pickArray(itin, ["segments"]) ?? []).filter(isObject) as UnknownRecord[];
+    if (segs.length === 0) return [];
+    return [
+      {
+        durationMinutes: durationMinutesFromDurationField(itin),
+        stops: Math.max(0, segs.length - 1),
+      },
+    ];
+  }
+
+  const groups = collectSegmentGroupsFromRecord(record);
+  return groups.map((segs) => ({
+    durationMinutes:
+      durationMinutesFromDurationField(record) ?? sumSegmentDurationMinutes(segs),
+    stops: Math.max(0, segs.length - 1),
+  }));
+}
+
 export function formatConnectionLayover(prev: UnknownRecord, next: UnknownRecord): string | null {
   const arr = parseAtFromSegment(prev, "arrival");
   const dep = parseAtFromSegment(next, "departure");
