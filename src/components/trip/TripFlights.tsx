@@ -20,6 +20,7 @@ import { DualPriceDisplay, formatAmadeusDualPriceParts } from "./tripDualPrice";
 import { useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
 import type { UnknownRecord } from "./tripShared";
 import {
+  DEFAULT_OPTION_CARD_CLASS,
   formatDurationMinutesAsHoursMinutes,
   getFlightOptionSortableId,
   isObject,
@@ -27,6 +28,7 @@ import {
   pickArray,
   pickNumber,
   pickString,
+  TOP_OPTION_CARD_CLASS,
 } from "./tripShared";
 import {
   collectSegmentGroupsFromRecord,
@@ -168,9 +170,14 @@ function FlightOptionBox({
   const dateRight = [depart, arrive].filter(Boolean).join(" → ");
   const headerRows = getFlightLegHeadersFromOffer(opt, parentFlight, maps, "airport");
   const detailId = `flight-${parentFlightIndex}-opt-${optionIndex}`;
+  const isTopOption = optionIndex === 0;
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
+    <div
+      className={`w-full min-w-0 max-w-full overflow-hidden rounded-lg border ${
+        isTopOption ? TOP_OPTION_CARD_CLASS : DEFAULT_OPTION_CARD_CLASS
+      }`}
+    >
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}

@@ -137,6 +137,13 @@ export function formatHotelCityLine(cityCode: string | undefined, maps: TripLoca
   return code;
 }
 
+/** Default shell for a single fare/hotel option card. */
+export const DEFAULT_OPTION_CARD_CLASS = "border-border/80 bg-background/40";
+
+/** First option in a ranked list (green border + tint). */
+export const TOP_OPTION_CARD_CLASS =
+  "border-emerald-600/70 bg-emerald-500/[0.09] ring-1 ring-inset ring-emerald-500/25";
+
 /** Inset for expanded flight/hotel option lists under a leg row. */
 export const LEG_OPTION_PANEL_CLASS =
   "border-t border-border bg-background/25 px-2.5 py-2 space-y-2 rounded-b-lg sm:px-3 sm:py-2.5";

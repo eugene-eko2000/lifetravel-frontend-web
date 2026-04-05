@@ -21,6 +21,7 @@ import { useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
 import type { UnknownRecord } from "./tripShared";
 import {
   asIsoDate,
+  DEFAULT_OPTION_CARD_CLASS,
   formatHotelCityLine,
   getHotelOptionSortableId,
   isObject,
@@ -30,6 +31,7 @@ import {
   pickRecord,
   pickScalar,
   pickString,
+  TOP_OPTION_CARD_CLASS,
 } from "./tripShared";
 import { formatFlightDateTime, toTitleCaseWords } from "./tripFlightFormatting";
 import { SortableOptionRow } from "./SortableOptionRow";
@@ -289,9 +291,14 @@ function HotelOptionBox({
 
   const detailId = `hotel-${parentHotelIndex}-opt-${optionIndex}`;
   const showDetailsPanel = offer != null;
+  const isTopOption = optionIndex === 0;
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
+    <div
+      className={`w-full min-w-0 max-w-full overflow-hidden rounded-lg border ${
+        isTopOption ? TOP_OPTION_CARD_CLASS : DEFAULT_OPTION_CARD_CLASS
+      }`}
+    >
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}
