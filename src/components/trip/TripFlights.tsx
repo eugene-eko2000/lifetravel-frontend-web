@@ -232,7 +232,12 @@ function SortableFlightOptionsList({
   onReorder: (newOrder: UnknownRecord[]) => void;
 }) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 6,
+      },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   const sortableIds = useMemo(
@@ -257,7 +262,7 @@ function SortableFlightOptionsList({
             <SortableOptionRow
               key={sortableIds[i]}
               id={sortableIds[i]}
-              ariaLabel="Drag to reorder fare option"
+              ariaLabel="Fare option: press and hold, then drag to reorder"
             >
               <FlightOptionBox
                 opt={opt}

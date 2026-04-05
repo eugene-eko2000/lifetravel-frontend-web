@@ -363,7 +363,12 @@ function SortableHotelOptionsList({
   onReorder: (newOrder: UnknownRecord[]) => void;
 }) {
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 6,
+      },
+    }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
   const sortableIds = useMemo(
@@ -388,7 +393,7 @@ function SortableHotelOptionsList({
             <SortableOptionRow
               key={sortableIds[i]}
               id={sortableIds[i]}
-              ariaLabel="Drag to reorder hotel option"
+              ariaLabel="Hotel option: press and hold, then drag to reorder"
             >
               <HotelOptionBox opt={opt} optionIndex={i} parentStay={stay} parentHotelIndex={hotelIndex} />
             </SortableOptionRow>
