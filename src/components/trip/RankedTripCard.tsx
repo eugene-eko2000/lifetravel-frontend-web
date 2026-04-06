@@ -27,7 +27,17 @@ import {
   sortFlightAndHotelOptionsByRankingInRanked,
 } from "./tripRankedModel";
 
-export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; ranked: UnknownRecord }) {
+export function RankedTripCard({
+  envelope,
+  ranked,
+  variant = "thumbnail",
+}: {
+  envelope: UnknownRecord;
+  ranked: UnknownRecord;
+  /** `thumbnail`: compact inline cards (no ▶/▼). `detailed`: full card (e.g. modal) with chevrons. */
+  variant?: "thumbnail" | "detailed";
+}) {
+  const showExpandChevrons = variant === "detailed";
   const tripIndex = pickNumber(envelope, ["trip_index", "itinerary_index"]);
   const tripCount = pickNumber(envelope, ["trip_count", "itinerary_count"]);
 
@@ -175,6 +185,7 @@ export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; 
                   <LegFlightsBlock
                     flights={legFlights}
                     legIndex={legIdx}
+                    showExpandChevrons={showExpandChevrons}
                     onReorderFlightOptions={(flightIndex, newOptions) =>
                       reorderFlightOptions(legIdx, flightIndex, newOptions)
                     }
@@ -182,6 +193,7 @@ export function RankedTripCard({ envelope, ranked }: { envelope: UnknownRecord; 
                   <LegHotelsBlock
                     hotels={legHotels}
                     legIndex={legIdx}
+                    showExpandChevrons={showExpandChevrons}
                     onReorderHotelOptions={(hotelIndex, newOptions) =>
                       reorderHotelOptions(legIdx, hotelIndex, newOptions)
                     }

@@ -257,11 +257,13 @@ function HotelOptionBox({
   optionIndex,
   parentStay,
   parentHotelIndex,
+  showExpandChevrons = false,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentStay: UnknownRecord;
   parentHotelIndex: number;
+  showExpandChevrons?: boolean;
 }) {
   const tripCurrency = useTripCurrency();
   const maps = useTripLocationMaps();
@@ -305,13 +307,17 @@ function HotelOptionBox({
         aria-expanded={detailsOpen}
         aria-controls={showDetailsPanel ? detailId : undefined}
         id={`${detailId}-summary`}
-        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        className={`flex w-full min-w-0 touch-manipulation items-start ${
+          showExpandChevrons ? "gap-2" : ""
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="shrink-0 text-xs text-muted mt-0.5 w-4 text-center" aria-hidden>
-          {detailsOpen ? "▼" : "▶"}
-        </span>
+        {showExpandChevrons ? (
+          <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
+            {detailsOpen ? "▼" : "▶"}
+          </span>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline justify-between gap-2">
             <p className="text-sm font-medium text-foreground">{title}</p>
@@ -355,12 +361,14 @@ function SortableHotelOptionsList({
   legIndex,
   objectOptions,
   onReorder,
+  showExpandChevrons = false,
 }: {
   stay: UnknownRecord;
   hotelIndex: number;
   legIndex: number;
   objectOptions: UnknownRecord[];
   onReorder: (newOrder: UnknownRecord[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -395,7 +403,13 @@ function SortableHotelOptionsList({
               id={sortableIds[i]}
               ariaLabel="Hotel option: press and hold, then drag to reorder"
             >
-              <HotelOptionBox opt={opt} optionIndex={i} parentStay={stay} parentHotelIndex={hotelIndex} />
+              <HotelOptionBox
+                opt={opt}
+                optionIndex={i}
+                parentStay={stay}
+                parentHotelIndex={hotelIndex}
+                showExpandChevrons={showExpandChevrons}
+              />
             </SortableOptionRow>
           ))}
         </div>
@@ -408,11 +422,13 @@ function HotelRow({
   labelIndex,
   legIndex,
   onOptionsReorder,
+  showExpandChevrons = false,
 }: {
   stay: UnknownRecord;
   labelIndex: number;
   legIndex: number;
   onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const maps = useTripLocationMaps();
@@ -431,13 +447,17 @@ function HotelRow({
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        className={`flex w-full min-w-0 touch-manipulation items-start ${
+          showExpandChevrons ? "gap-2" : ""
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           open ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
-          {open ? "▼" : "▶"}
-        </span>
+        {showExpandChevrons ? (
+          <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
+            {open ? "▼" : "▶"}
+          </span>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-2 sm:gap-y-1">
             <p className="min-w-0 text-sm font-medium text-foreground">{title}</p>
@@ -457,11 +477,19 @@ function HotelRow({
                 legIndex={legIndex}
                 objectOptions={objectOptions}
                 onReorder={onOptionsReorder}
+                showExpandChevrons={showExpandChevrons}
               />
             ) : (
               <div className="space-y-2">
                 {objectOptions.map((opt, i) => (
-                  <HotelOptionBox key={i} opt={opt} optionIndex={i} parentStay={stay} parentHotelIndex={labelIndex} />
+                  <HotelOptionBox
+                    key={i}
+                    opt={opt}
+                    optionIndex={i}
+                    parentStay={stay}
+                    parentHotelIndex={labelIndex}
+                    showExpandChevrons={showExpandChevrons}
+                  />
                 ))}
               </div>
             )
@@ -477,10 +505,12 @@ export function LegHotelsBlock({
   hotels,
   legIndex,
   onReorderHotelOptions,
+  showExpandChevrons = false,
 }: {
   hotels: unknown[];
   legIndex: number;
   onReorderHotelOptions?: (hotelIndex: number, newOptions: unknown[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const list = hotels.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
@@ -497,6 +527,7 @@ export function LegHotelsBlock({
             stay={stay}
             labelIndex={idx}
             legIndex={legIndex}
+            showExpandChevrons={showExpandChevrons}
             onOptionsReorder={
               onReorderHotelOptions
                 ? (newOrder) => onReorderHotelOptions(idx, newOrder)

@@ -145,11 +145,13 @@ function FlightOptionBox({
   optionIndex,
   parentFlight,
   parentFlightIndex,
+  showExpandChevrons = false,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentFlight: UnknownRecord;
   parentFlightIndex: number;
+  showExpandChevrons?: boolean;
 }) {
   const maps = useTripLocationMaps();
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -184,13 +186,17 @@ function FlightOptionBox({
         aria-expanded={detailsOpen}
         aria-controls={detailId}
         id={`${detailId}-summary`}
-        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        className={`flex w-full min-w-0 touch-manipulation items-start ${
+          showExpandChevrons ? "gap-2" : ""
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
-          {detailsOpen ? "▼" : "▶"}
-        </span>
+        {showExpandChevrons ? (
+          <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
+            {detailsOpen ? "▼" : "▶"}
+          </span>
+        ) : null}
         <div className="min-w-0 flex-1">
           {headerRows.length > 0 ? (
             <FlightLegHeaderGrid rows={headerRows} />
@@ -223,6 +229,7 @@ function SortableFlightOptionsList({
   parentFlightIndex,
   objectOptions,
   onReorder,
+  showExpandChevrons = false,
 }: {
   flight: UnknownRecord;
   flightIndex: number;
@@ -230,6 +237,7 @@ function SortableFlightOptionsList({
   parentFlightIndex: number;
   objectOptions: UnknownRecord[];
   onReorder: (newOrder: UnknownRecord[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -269,6 +277,7 @@ function SortableFlightOptionsList({
                 optionIndex={i}
                 parentFlight={flight}
                 parentFlightIndex={parentFlightIndex}
+                showExpandChevrons={showExpandChevrons}
               />
             </SortableOptionRow>
           ))}
@@ -478,11 +487,13 @@ function FlightRow({
   labelIndex,
   legIndex,
   onOptionsReorder,
+  showExpandChevrons = false,
 }: {
   flight: UnknownRecord;
   labelIndex: number;
   legIndex: number;
   onOptionsReorder?: (newOptions: UnknownRecord[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const maps = useTripLocationMaps();
@@ -513,13 +524,17 @@ function FlightRow({
         aria-expanded={detailsOpen}
         aria-controls={`flight-detail-${labelIndex}`}
         id={`flight-summary-${labelIndex}`}
-        className={`flex w-full min-w-0 touch-manipulation items-start gap-2 p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        className={`flex w-full min-w-0 touch-manipulation items-start ${
+          showExpandChevrons ? "gap-2" : ""
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
-        <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
-          {detailsOpen ? "▼" : "▶"}
-        </span>
+        {showExpandChevrons ? (
+          <span className="mt-0.5 w-4 shrink-0 text-center text-xs text-muted" aria-hidden>
+            {detailsOpen ? "▼" : "▶"}
+          </span>
+        ) : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-baseline sm:justify-between sm:gap-x-2 sm:gap-y-1">
             {multiItinLines && multiItinLines.length > 1 ? (
@@ -565,6 +580,7 @@ function FlightRow({
                 parentFlightIndex={labelIndex}
                 objectOptions={objectOptions}
                 onReorder={onOptionsReorder}
+                showExpandChevrons={showExpandChevrons}
               />
             ) : (
               <div className="space-y-2">
@@ -575,6 +591,7 @@ function FlightRow({
                     optionIndex={i}
                     parentFlight={flight}
                     parentFlightIndex={labelIndex}
+                    showExpandChevrons={showExpandChevrons}
                   />
                 ))}
               </div>
@@ -592,10 +609,12 @@ export function LegFlightsBlock({
   flights,
   legIndex,
   onReorderFlightOptions,
+  showExpandChevrons = false,
 }: {
   flights: unknown[];
   legIndex: number;
   onReorderFlightOptions?: (flightIndex: number, newOptions: unknown[]) => void;
+  showExpandChevrons?: boolean;
 }) {
   const list = flights.filter(isObject) as UnknownRecord[];
   if (list.length === 0) return null;
@@ -612,6 +631,7 @@ export function LegFlightsBlock({
             flight={flight}
             labelIndex={idx}
             legIndex={legIndex}
+            showExpandChevrons={showExpandChevrons}
             onOptionsReorder={
               onReorderFlightOptions
                 ? (newOrder) => onReorderFlightOptions(idx, newOrder)

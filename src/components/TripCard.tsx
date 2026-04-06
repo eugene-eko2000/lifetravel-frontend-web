@@ -68,12 +68,33 @@ function normalizeTripRoot(data: unknown): UnknownRecord | undefined {
   return data;
 }
 
-export function TripCard({ data }: { data: unknown }) {
+export type TripCardVariant = "thumbnail" | "detailed";
+
+export function TripCard({
+  data,
+  variant = "thumbnail",
+}: {
+  data: unknown;
+  /** Inline chat previews use `thumbnail` (no expand chevrons); modal uses `detailed`. */
+  variant?: TripCardVariant;
+}) {
   if (isObject(data) && "ranked_trip" in data && isObject((data as UnknownRecord).ranked_trip)) {
-    return <RankedTripCard envelope={data} ranked={(data as UnknownRecord).ranked_trip as UnknownRecord} />;
+    return (
+      <RankedTripCard
+        envelope={data}
+        ranked={(data as UnknownRecord).ranked_trip as UnknownRecord}
+        variant={variant}
+      />
+    );
   }
   if (isObject(data) && "ranked_itinerary" in data && isObject((data as UnknownRecord).ranked_itinerary)) {
-    return <RankedTripCard envelope={data} ranked={(data as UnknownRecord).ranked_itinerary as UnknownRecord} />;
+    return (
+      <RankedTripCard
+        envelope={data}
+        ranked={(data as UnknownRecord).ranked_itinerary as UnknownRecord}
+        variant={variant}
+      />
+    );
   }
 
   const root = normalizeTripRoot(data);

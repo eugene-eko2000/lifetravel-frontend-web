@@ -174,7 +174,7 @@ function TripModal({
           </svg>
         </button>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <TripCard key={mountKey} data={data} />
+          <TripCard key={mountKey} data={data} variant="detailed" />
         </div>
       </div>
     </div>,
