@@ -98,6 +98,20 @@ export function extractTripLocationMaps(ranked: UnknownRecord): TripLocationMaps
   return { airportToCityMeta, cityCodeToName };
 }
 
+/** IATA carrier code → airline name from `flight_dictionaries.carriers` (Amadeus-style). */
+export function extractFlightCarriersMap(ranked: UnknownRecord): Record<string, string> {
+  const out: Record<string, string> = {};
+  const fd = pickRecord(ranked, ["flight_dictionaries"]);
+  const carriers = fd ? pickRecord(fd, ["carriers"]) : undefined;
+  if (!carriers) return out;
+  for (const [k, v] of Object.entries(carriers)) {
+    if (typeof v !== "string" || !v.trim()) continue;
+    const code = k.trim().toUpperCase();
+    if (code) out[code] = v.trim();
+  }
+  return out;
+}
+
 export function asIsoDate(value: unknown): string | undefined {
   return typeof value === "string" && value.length >= 10 ? value.slice(0, 10) : undefined;
 }

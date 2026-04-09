@@ -17,7 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { Fragment, useMemo, useState } from "react";
 import { DualPriceDisplay, formatAmadeusDualPriceParts } from "./tripDualPrice";
-import { useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
+import { useTripCarriers, useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
 import type { UnknownRecord } from "./tripShared";
 import {
   DEFAULT_OPTION_CARD_CLASS,
@@ -38,7 +38,9 @@ import {
   formatFareBagsLine,
   formatFlightEndpointDisplay,
   formatFlightEndpointFromNestedEndpoint,
+  formatOptionCarrierAndFlightLine,
   formatSegmentCarrier,
+  formatSegmentOperatedByLine,
   gatherFlightOfferSourceRecord,
   getFlightLegHeadersFromOffer,
   type FlightLegHeaderParts,
@@ -154,14 +156,16 @@ function FlightOptionBox({
   showExpandChevrons?: boolean;
 }) {
   const maps = useTripLocationMaps();
+  const carriers = useTripCarriers();
   const [detailsOpen, setDetailsOpen] = useState(false);
   const routeAirports = pickFlightOptionRouteAirportCodes(opt, parentFlight);
   const routeTitle = [routeAirports.from, routeAirports.to].filter(Boolean).join(" → ");
   const airline = pickString(opt, ["airline", "carrier", "validating_airline", "marketing_airline"]);
   const flightNo = pickString(opt, ["flight_number", "number", "flight"]);
+  const carrierFlightLine = formatOptionCarrierAndFlightLine(airline, flightNo, carriers);
   const title =
     routeTitle ||
-    [airline, flightNo].filter(Boolean).join(" ") ||
+    carrierFlightLine ||
     airline ||
     `Flight ${optionIndex + 1}`;
 
@@ -334,9 +338,11 @@ function FlightSegmentCard({
   segmentCountInLeg?: number;
 }) {
   const maps = useTripLocationMaps();
+  const carriers = useTripCarriers();
   const dep = formatFlightEndpointFromNestedEndpoint(seg, "departure");
   const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
-  const carrier = formatSegmentCarrier(seg);
+  const carrier = formatSegmentCarrier(seg, carriers);
+  const operatedByLine = formatSegmentOperatedByLine(seg, carriers);
   const depLoc = formatAirportLineWithMaps(seg, "departure", maps);
   const arrLoc = formatAirportLineWithMaps(seg, "arrival", maps);
 
@@ -357,6 +363,9 @@ function FlightSegmentCard({
         {labelTotal > 1 ? ` of ${labelTotal}` : ""}
       </p>
       <p className="mt-1 text-sm font-medium text-foreground">{carrier}</p>
+      {operatedByLine ? (
+        <p className="mt-1 text-xs text-muted">{operatedByLine}</p>
+      ) : null}
       <dl className="mt-2 space-y-2 text-xs">
         <div>
           <dt className="text-[10px] font-medium uppercase text-muted">Departure</dt>

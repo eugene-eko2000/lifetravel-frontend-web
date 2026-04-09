@@ -415,8 +415,20 @@ export function formatAirportLineWithMaps(seg: UnknownRecord, side: "departure" 
   return parts.join(" · ") || "—";
 }
 
-/** Carrier + flight number line for a segment. */
-export function formatSegmentCarrier(seg: UnknownRecord): string {
+/** Resolve airline name from `flight_dictionaries.carriers` (keys are IATA codes). */
+export function lookupCarrierName(
+  carriers: Record<string, string> | undefined,
+  carrierCode: string | undefined
+): string | undefined {
+  if (!carriers || !carrierCode?.trim()) return undefined;
+  const c = carrierCode.trim().toUpperCase();
+  return carriers[c];
+}
+
+/**
+ * Carrier + flight number; when `carriers` has an entry for the code, appends ` · {full name}`.
+ */
+export function formatSegmentCarrier(seg: UnknownRecord, carriers?: Record<string, string>): string {
   const carrier = pickString(seg, ["carrierCode", "carrier"]);
   const n = seg.number ?? seg.flight_number;
   const num =
@@ -425,10 +437,52 @@ export function formatSegmentCarrier(seg: UnknownRecord): string {
       : typeof n === "string" && n.trim()
         ? n.trim()
         : pickString(seg, ["number", "flight_number"]);
-  if (carrier && num) return `${carrier} ${num}`;
+  if (carrier && num) {
+    const full = lookupCarrierName(carriers, carrier);
+    return full ? `${carrier} ${num} · ${full}` : `${carrier} ${num}`;
+  }
   const airline = pickString(seg, ["airline", "operatingCarrier"]);
-  if (airline) return num ? `${airline} ${num}` : airline;
+  if (airline) {
+    if (num) {
+      const full = airline.length <= 3 ? lookupCarrierName(carriers, airline) : undefined;
+      return full ? `${airline} ${num} · ${full}` : `${airline} ${num}`;
+    }
+    return airline;
+  }
   return pickString(seg, ["flightNumber"]) ?? "Flight";
+}
+
+/**
+ * Option-level airline field (often IATA) + flight number with optional dictionary name.
+ * Skips dictionary when `airline` looks like a full name (longer than 3 chars) to avoid duplication.
+ */
+export function formatOptionCarrierAndFlightLine(
+  airline: string | undefined,
+  flightNum: string | undefined,
+  carriers: Record<string, string>
+): string {
+  const base = [airline, flightNum].filter(Boolean).join(" ");
+  if (!airline?.trim() || !flightNum?.trim()) return base;
+  if (airline.length > 3) return base;
+  const full = lookupCarrierName(carriers, airline);
+  return full ? `${base} · ${full}` : base;
+}
+
+/**
+ * When `operating.carrierCode` differs from the marketing segment carrier, returns
+ * `Operated by {name}` using `flight_dictionaries.carriers`, or the operating code if unknown.
+ */
+export function formatSegmentOperatedByLine(
+  seg: UnknownRecord,
+  carriers: Record<string, string> | undefined
+): string | undefined {
+  const marketing = pickString(seg, ["carrierCode", "carrier"])?.trim().toUpperCase();
+  const opRec = pickRecord(seg, ["operating"]);
+  const operatingCodeRaw = opRec ? pickString(opRec, ["carrierCode", "carrier"]) : undefined;
+  const operating = operatingCodeRaw?.trim().toUpperCase();
+  if (!marketing || !operating || marketing === operating) return undefined;
+  const name = lookupCarrierName(carriers, operatingCodeRaw) ?? operatingCodeRaw ?? operating;
+  return `Operated by ${name}`;
 }
 
 /** Amadeus segment id for matching `fareDetailsBySegment.segmentId`. */

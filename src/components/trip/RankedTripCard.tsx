@@ -2,12 +2,13 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { DualPriceDisplay } from "./tripDualPrice";
-import { TripCurrencyContext, TripLocationMapsContext } from "./TripCardContexts";
+import { TripCarriersContext, TripCurrencyContext, TripLocationMapsContext } from "./TripCardContexts";
 import { LegFlightsBlock } from "./TripFlights";
 import { LegHotelsBlock } from "./TripHotels";
 import type { UnknownRecord } from "./tripShared";
 import {
   asIsoDate,
+  extractFlightCarriersMap,
   extractTripLocationMaps,
   formatTripSummaryDates,
   isObject,
@@ -105,10 +106,15 @@ export function RankedTripCard({
   });
 
   const locationMaps = useMemo(() => extractTripLocationMaps(rankedState), [rankedState]);
+  const carrierMap = useMemo(
+    () => ({ ...extractFlightCarriersMap(envelope), ...extractFlightCarriersMap(rankedState) }),
+    [rankedState, envelope]
+  );
 
   return (
     <TripCurrencyContext.Provider value={tripCurrency}>
       <TripLocationMapsContext.Provider value={locationMaps}>
+      <TripCarriersContext.Provider value={carrierMap}>
       <div className="max-w-full min-w-0 overflow-hidden rounded-xl border border-border bg-surface p-3 sm:p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -205,6 +211,7 @@ export function RankedTripCard({
         </div>
         )}
       </div>
+      </TripCarriersContext.Provider>
       </TripLocationMapsContext.Provider>
     </TripCurrencyContext.Provider>
   );
