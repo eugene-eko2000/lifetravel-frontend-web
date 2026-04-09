@@ -40,6 +40,7 @@ import {
   formatFlightEndpointFromNestedEndpoint,
   formatOptionCarrierAndFlightLine,
   formatSegmentCarrier,
+  formatSegmentDuration,
   formatSegmentOperatedByLine,
   gatherFlightOfferSourceRecord,
   getFlightLegHeadersFromOffer,
@@ -343,6 +344,7 @@ function FlightSegmentCard({
   const arr = formatFlightEndpointFromNestedEndpoint(seg, "arrival");
   const carrier = formatSegmentCarrier(seg, carriers);
   const operatedByLine = formatSegmentOperatedByLine(seg, carriers);
+  const segmentDuration = formatSegmentDuration(seg);
   const depLoc = formatAirportLineWithMaps(seg, "departure", maps);
   const arrLoc = formatAirportLineWithMaps(seg, "arrival", maps);
 
@@ -366,40 +368,65 @@ function FlightSegmentCard({
       {operatedByLine ? (
         <p className="mt-1 text-xs text-muted">{operatedByLine}</p>
       ) : null}
-      <dl className="mt-2 space-y-2 text-xs">
-        <div>
-          <dt className="text-[10px] font-medium uppercase text-muted">Departure</dt>
-          <dd className="mt-0.5 text-foreground">{depLoc}</dd>
-          <dd className="text-muted">{dep ?? "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-[10px] font-medium uppercase text-muted">Arrival</dt>
-          <dd className="mt-0.5 text-foreground">{arrLoc}</dd>
-          <dd className="text-muted">{arr ?? "—"}</dd>
-        </div>
-        {hasFareExtras ? (
-          <>
-            {cabinLabel ? (
-              <div>
-                <dt className="text-[10px] font-medium uppercase text-muted">Cabin class</dt>
-                <dd className="mt-0.5 text-foreground">{cabinLabel}</dd>
-              </div>
-            ) : null}
-            {checkedBags ? (
-              <div>
-                <dt className="text-[10px] font-medium uppercase text-muted">Checked bags</dt>
-                <dd className="mt-0.5 text-foreground">{checkedBags}</dd>
-              </div>
-            ) : null}
-            {cabinBags ? (
-              <div>
-                <dt className="text-[10px] font-medium uppercase text-muted">Cabin bags</dt>
-                <dd className="mt-0.5 text-foreground">{cabinBags}</dd>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </dl>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[min(100%,18rem)] border-collapse text-xs">
+          <colgroup>
+            <col className="w-[38%]" />
+            <col className="w-[38%]" />
+            <col className="w-[24%]" />
+          </colgroup>
+          <thead>
+            <tr className="border-b border-border/60">
+              <th className="pb-1.5 pr-2 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
+                Departure
+              </th>
+              <th className="pb-1.5 pr-2 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
+                Arrival
+              </th>
+              <th className="pb-1.5 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
+                Duration
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="align-top py-1.5 pr-2 font-semibold text-foreground">
+                <div className="min-w-0 break-words">{depLoc}</div>
+                <div className="mt-0.5 min-w-0 break-words">{dep ?? "—"}</div>
+              </td>
+              <td className="align-top py-1.5 pr-2 font-semibold text-foreground">
+                <div className="min-w-0 break-words">{arrLoc}</div>
+                <div className="mt-0.5 min-w-0 break-words">{arr ?? "—"}</div>
+              </td>
+              <td className="align-top py-1.5 font-semibold text-foreground tabular-nums">
+                {segmentDuration ?? "—"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {hasFareExtras ? (
+        <dl className="mt-3 space-y-2 border-t border-border/40 pt-3 text-xs">
+          {cabinLabel ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Cabin class</dt>
+              <dd className="mt-0.5 text-foreground">{cabinLabel}</dd>
+            </div>
+          ) : null}
+          {checkedBags ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Checked bags</dt>
+              <dd className="mt-0.5 text-foreground">{checkedBags}</dd>
+            </div>
+          ) : null}
+          {cabinBags ? (
+            <div>
+              <dt className="text-[10px] font-medium uppercase text-muted">Cabin bags</dt>
+              <dd className="mt-0.5 text-foreground">{cabinBags}</dd>
+            </div>
+          ) : null}
+        </dl>
+      ) : null}
     </div>
   );
 }

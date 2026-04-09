@@ -628,6 +628,13 @@ function durationMinutesFromDurationField(entity: UnknownRecord): number | undef
   return parseDurationFieldToMinutes(raw);
 }
 
+/** Human-readable segment duration from the segment `duration` field (e.g. ISO 8601 `PT3H25M`). */
+export function formatSegmentDuration(seg: UnknownRecord): string | undefined {
+  const m = durationMinutesFromDurationField(seg);
+  if (m == null) return undefined;
+  return formatDurationMinutesAsHoursMinutes(m);
+}
+
 function sumSegmentDurationMinutes(segs: UnknownRecord[]): number | undefined {
   let sum = 0;
   let any = false;
