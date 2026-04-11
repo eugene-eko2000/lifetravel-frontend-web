@@ -49,11 +49,11 @@ function JsonViewerNode({
     const isEmpty = data.length === 0;
     const bracket = isEmpty ? "[]" : expanded ? "[" : "[ … ]";
     return (
-      <div className="flex flex-col text-sm">
+      <div className="flex min-w-0 flex-col text-sm">
         <button
           type="button"
           onClick={toggle}
-          className="flex items-center gap-1.5 text-left hover:bg-black/5 dark:hover:bg-white/5 rounded px-0.5 -mx-0.5 py-0.5"
+          className="flex min-w-0 items-center gap-1.5 rounded px-0.5 py-0.5 text-left -mx-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           aria-expanded={expanded}
         >
           <span className="text-muted select-none w-4 shrink-0" aria-hidden>
@@ -91,11 +91,11 @@ function JsonViewerNode({
     const isEmpty = keys.length === 0;
     const bracket = isEmpty ? "{}" : expanded ? "{" : "{ … }";
     return (
-      <div className="flex flex-col text-sm">
+      <div className="flex min-w-0 flex-col text-sm">
         <button
           type="button"
           onClick={toggle}
-          className="flex items-center gap-1.5 text-left hover:bg-black/5 dark:hover:bg-white/5 rounded px-0.5 -mx-0.5 py-0.5"
+          className="flex min-w-0 items-center gap-1.5 rounded px-0.5 py-0.5 text-left -mx-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           aria-expanded={expanded}
         >
           <span className="text-muted select-none w-4 shrink-0" aria-hidden>
@@ -129,13 +129,13 @@ function JsonViewerNode({
   }
 
   return (
-    <div className="flex items-baseline gap-1.5 text-sm py-0.5">
+    <div className="flex min-w-0 items-baseline gap-1.5 py-0.5 text-sm">
       {label != null && (
-        <span className="text-purple-600 dark:text-purple-400 font-medium shrink-0">
+        <span className="shrink-0 font-medium text-purple-600 dark:text-purple-400">
           {label}:
         </span>
       )}
-      <span className={primitiveClassName(data)}>{primitiveLabel(data)}</span>
+      <span className={`min-w-0 break-all ${primitiveClassName(data)}`}>{primitiveLabel(data)}</span>
     </div>
   );
 }
@@ -161,7 +161,7 @@ export function JsonViewer({ data, defaultExpanded = true, className = "" }: Jso
   }, []);
 
   return (
-    <div className={`font-mono text-xs overflow-x-auto ${className}`}>
+    <div className={`min-w-0 max-w-full overflow-x-auto font-mono text-xs ${className}`}>
       <JsonViewerNode
         data={data}
         path="root"

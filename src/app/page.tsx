@@ -138,7 +138,7 @@ function TripModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="trip-modal-title"
-        className="relative flex max-h-[min(90vh,900px)] w-full max-w-[min(95vw,96rem)] flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl"
+        className="relative flex max-h-[min(90vh,900px)] w-full max-w-full flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl sm:max-w-[96rem]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 pr-12">
@@ -259,11 +259,11 @@ function AssistantMessageBlocks({
               onOpenTripModal(block.data);
             }
           }}
-          className="min-w-0 cursor-pointer rounded-lg border border-border bg-background/50 text-left overflow-x-auto outline-none transition-colors hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-border"
+          className="min-w-0 max-w-full cursor-pointer overflow-x-auto rounded-lg border border-border bg-background/50 text-left outline-none transition-colors hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-border"
           aria-label="Open trip in modal"
         >
           {copyBar}
-          <div className="pointer-events-none p-3">
+          <div className="pointer-events-none min-w-0 max-w-full p-3">
             <TripCard data={block.data} />
           </div>
         </div>
@@ -273,7 +273,7 @@ function AssistantMessageBlocks({
     return (
       <div
         key={i}
-        className="min-w-0 rounded-lg border border-border bg-background/50 overflow-x-auto"
+        className="min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-background/50"
       >
         {copyBar}
         <div className="p-3">
@@ -309,7 +309,7 @@ function AssistantMessageBlocks({
       renderedBlocks.push(
         <pre
           key={i}
-          className="whitespace-pre-wrap rounded-lg border border-border bg-background/50 p-3 text-xs"
+          className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-lg border border-border bg-background/50 p-3 text-xs"
         >
           {b.data}
         </pre>
@@ -760,10 +760,10 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
+    <div className="flex h-dvh w-full min-w-0 max-w-full flex-col overflow-hidden bg-background">
       {/* Header */}
       <header className="relative flex min-w-0 shrink-0 items-center justify-center border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
-        <h1 className="truncate px-8 text-center text-base font-semibold text-foreground sm:px-12 sm:text-lg">
+        <h1 className="w-full min-w-0 truncate px-8 text-center text-base font-semibold text-foreground sm:px-12 sm:text-lg">
           LifeTravel Chat
         </h1>
         <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
@@ -780,7 +780,7 @@ export default function Home() {
       {/* Messages Area — below `md`, debug uses a horizontal split (stacked panes); `md+` keeps left/right. */}
       <main
         ref={splitContainerRef}
-        className={`flex min-h-0 flex-1 overflow-hidden ${
+        className={`flex min-h-0 min-w-0 w-full flex-1 overflow-hidden ${
           isDebugPanelOpen ? "flex-col md:flex-row" : ""
         }`}
       >
@@ -829,12 +829,12 @@ export default function Home() {
                 {messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`mb-6 flex ${
+                    className={`mb-6 flex min-w-0 w-full max-w-full ${
                       message.role === "assistant" ? "justify-center" : "justify-start"
                     }`}
                   >
                     <div
-                      className={`rounded-2xl px-4 py-3 ${
+                      className={`min-w-0 rounded-2xl px-4 py-3 ${
                         message.role === "user"
                           ? "max-w-[85%] bg-user-bubble text-foreground"
                           : "w-full max-w-[95%] bg-assistant-bubble text-foreground"
@@ -973,7 +973,7 @@ export default function Home() {
       </main>
 
       {/* Input Area */}
-      <footer className="shrink-0 border-t border-border bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:pb-4 sm:pt-4">
+      <footer className="min-w-0 max-w-full shrink-0 overflow-x-hidden border-t border-border bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:pb-4 sm:pt-4">
         <form
           onSubmit={handleSubmit}
           className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2.5 focus-within:border-muted transition-colors sm:gap-3 sm:px-4 sm:py-3"
