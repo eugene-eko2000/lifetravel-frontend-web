@@ -369,8 +369,8 @@ function FlightSegmentCard({
       {operatedByLine ? (
         <p className="mt-1 text-xs text-muted">{operatedByLine}</p>
       ) : null}
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[min(100%,18rem)] border-collapse text-xs">
+      <div className="mt-2 min-w-0">
+        <table className="w-full min-w-0 table-fixed border-collapse text-xs">
           <colgroup>
             <col className="w-[38%]" />
             <col className="w-[38%]" />
@@ -378,10 +378,10 @@ function FlightSegmentCard({
           </colgroup>
           <thead>
             <tr className="border-b border-border/60">
-              <th className="pb-1.5 pr-2 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
+              <th className="pb-1.5 pr-1 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted sm:pr-2">
                 Departure
               </th>
-              <th className="pb-1.5 pr-2 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
+              <th className="pb-1.5 pr-1 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted sm:pr-2">
                 Arrival
               </th>
               <th className="pb-1.5 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted">
@@ -391,11 +391,11 @@ function FlightSegmentCard({
           </thead>
           <tbody>
             <tr>
-              <td className="align-top py-1.5 pr-2 font-semibold text-foreground">
+              <td className="align-top py-1.5 pr-1 font-semibold text-foreground sm:pr-2">
                 <div className="min-w-0 break-words">{depLoc}</div>
                 <div className="mt-0.5 min-w-0 break-words">{dep ?? "—"}</div>
               </td>
-              <td className="align-top py-1.5 pr-2 font-semibold text-foreground">
+              <td className="align-top py-1.5 pr-1 font-semibold text-foreground sm:pr-2">
                 <div className="min-w-0 break-words">{arrLoc}</div>
                 <div className="mt-0.5 min-w-0 break-words">{arr ?? "—"}</div>
               </td>
