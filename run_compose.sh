@@ -21,8 +21,7 @@ else
   echo "Warning: ${ENV_FILE} not found. Using current shell environment only."
 fi
 
-# Agent API (WebSocket) base — same host as https://api.lifetravel.ui, wss scheme for browser WebSocket.
-export NEXT_PUBLIC_INGRESS_API="${NEXT_PUBLIC_INGRESS_API:-wss://api.lifetravel.ui}"
+export NEXT_PUBLIC_INGRESS_API="${NEXT_PUBLIC_INGRESS_API:-}"
 
 # Usage:
 #   ./run_compose.sh                 -> up --build -d
