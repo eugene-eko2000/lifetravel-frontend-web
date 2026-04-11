@@ -17,6 +17,12 @@ export const metadata: Metadata = {
   description: "LifeTravel AI Chat Assistant",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -25,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} min-h-0 overflow-x-hidden antialiased`}
       >
         {children}
       </body>

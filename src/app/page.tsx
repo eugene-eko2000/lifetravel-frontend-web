@@ -760,11 +760,13 @@ export default function Home() {
   };
 
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="flex h-dvh min-w-0 flex-col overflow-hidden bg-background">
       {/* Header */}
-      <header className="flex shrink-0 items-center justify-center border-b border-border px-4 py-3 relative">
-        <h1 className="text-lg font-semibold text-foreground">LifeTravel Chat</h1>
-        <div className="absolute right-4 flex items-center gap-2">
+      <header className="relative flex min-w-0 shrink-0 items-center justify-center border-b border-border px-3 py-2.5 sm:px-4 sm:py-3">
+        <h1 className="truncate px-12 text-center text-base font-semibold text-foreground sm:text-lg">
+          LifeTravel Chat
+        </h1>
+        <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
           <button
             type="button"
             onClick={toggleDebugPanel}
@@ -783,7 +785,7 @@ export default function Home() {
         }`}
       >
         <section
-          className={`flex min-h-0 flex-col ${
+          className={`flex min-h-0 min-w-0 flex-col ${
             isDebugPanelOpen
               ? isMobileDebugSplit
                 ? "shrink-0 border-b border-border md:border-b-0 md:border-r"
@@ -798,13 +800,13 @@ export default function Home() {
               : { width: "100%" }
           }
         >
-          <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
+          <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted sm:px-4 sm:text-sm">
             Trip
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
             {messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface">
+              <div className="flex h-full min-w-0 flex-col items-center justify-center gap-3 px-3 sm:gap-4 sm:px-4">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-surface sm:h-16 sm:w-16">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
@@ -813,17 +815,17 @@ export default function Home() {
                     strokeWidth={1.5}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    className="h-8 w-8 text-muted"
+                    className="h-7 w-7 text-muted sm:h-8 sm:w-8"
                   >
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                   </svg>
                 </div>
-                <p className="text-center text-lg text-muted">
+                <p className="max-w-[min(100%,22rem)] text-center text-sm leading-snug text-muted sm:text-base">
                   Hi, I&apos;m your personal travel assistant.
                 </p>
               </div>
             ) : (
-              <div className="px-4 py-6">
+              <div className="min-w-0 px-3 py-5 sm:px-4 sm:py-6">
                 {messages.map((message) => (
                   <div
                     key={message.id}
@@ -838,7 +840,7 @@ export default function Home() {
                           : "w-full max-w-[95%] bg-assistant-bubble text-foreground"
                       }`}
                     >
-                      <div className="text-sm leading-relaxed space-y-3">
+                      <div className="space-y-3 text-xs leading-relaxed sm:text-sm">
                         {message.role === "user" && (
                           <div className="text-left">
                             <div className="mb-1 flex items-center justify-end">
@@ -927,10 +929,10 @@ export default function Home() {
             />
 
             <section className="flex min-h-0 min-w-0 flex-1 flex-col md:min-w-[280px]">
-              <div className="shrink-0 border-b border-border px-4 py-2 text-sm font-medium text-muted">
+              <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted sm:px-4 sm:text-sm">
                 Debug
               </div>
-              <div ref={debugPanelScrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+              <div ref={debugPanelScrollRef} className="flex-1 overflow-y-auto px-3 py-5 sm:px-4 sm:py-6">
                 {debugMessages.length === 0 ? (
                   <p className="text-sm text-muted">Waiting for debug messages...</p>
                 ) : (
@@ -971,10 +973,10 @@ export default function Home() {
       </main>
 
       {/* Input Area */}
-      <footer className="shrink-0 border-t border-border bg-background px-4 py-4">
+      <footer className="shrink-0 border-t border-border bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:pb-4 sm:pt-4">
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex max-w-3xl items-end gap-3 rounded-2xl border border-border bg-surface px-4 py-3 focus-within:border-muted transition-colors"
+          className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2.5 focus-within:border-muted transition-colors sm:gap-3 sm:px-4 sm:py-3"
         >
           <textarea
             ref={textareaRef}
@@ -983,24 +985,24 @@ export default function Home() {
             onKeyDown={handleKeyDown}
             placeholder="Please describe your travel plan in a free form..."
             rows={1}
-            className="max-h-48 min-h-[24px] flex-1 resize-none bg-transparent text-left text-sm text-foreground placeholder-muted outline-none"
+            className="max-h-48 min-h-[22px] min-w-0 flex-1 resize-none bg-transparent text-left text-xs text-foreground placeholder-muted outline-none sm:min-h-[24px] sm:text-sm"
             disabled={isConnecting}
           />
           <button
             type="submit"
             disabled={!input.trim() || isConnecting || isStreaming}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600 sm:h-10 sm:w-10"
             aria-label="Send message"
           >
             <img
               src="/send-icon.svg"
               alt="Send"
-              className="h-6 w-6"
+              className="h-5 w-5 sm:h-6 sm:w-6"
             />
           </button>
         </form>
         {input.trim() ? (
-          <p className="mx-auto mt-2 max-w-3xl text-left text-xs text-muted">
+          <p className="mx-auto mt-1.5 max-w-3xl px-0.5 text-left text-[10px] text-muted sm:mt-2 sm:text-xs">
             Press Enter to send, Shift+Enter for a new line
           </p>
         ) : null}
