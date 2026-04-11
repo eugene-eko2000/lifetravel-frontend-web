@@ -1,0 +1,26 @@
+# Dependencies & build
+node_modules
+.next
+out
+
+# Git & IDE
+.git
+.gitignore
+.cursor
+
+# Env (inject at build/run via compose or -e; do not bake secrets into image)
+.env
+.env.*
+!.env.example
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test & misc
+coverage
+.turbo
+*.log
+npm-debug.log*
+.DS_Store

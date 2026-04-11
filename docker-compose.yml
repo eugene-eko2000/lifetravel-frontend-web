@@ -1,0 +1,25 @@
+# Local / server deployment: docker compose up --build
+#
+# Shared network with lifetravel-proxy (one-time): docker network create lifetravel_net
+#
+# Set NEXT_PUBLIC_INGRESS_API in .env next to this file, or export before build, e.g.:
+#   NEXT_PUBLIC_INGRESS_API=wss://api.lifetravel.ai/api docker compose up --build
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_INGRESS_API: ${NEXT_PUBLIC_INGRESS_API:-}
+    ports:
+      - "0.0.0.0:${PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - lifetravel_net
+
+networks:
+  lifetravel_net:
+    external: true
