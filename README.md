@@ -16,6 +16,16 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `NEXT_PUBLIC_INGRESS_API` | `ws://localhost:8080` | WebSocket backend URL |
+| `NEXT_PUBLIC_APP_MODE` | `prod` | `dev` enables the debug panel; `prod` hides it |
+
+Set these in `.env.local` or export them before running the dev server (see `run_local.sh`).
+For Docker builds pass them as build args: `--build-arg NEXT_PUBLIC_APP_MODE=dev`.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

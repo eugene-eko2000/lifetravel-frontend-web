@@ -2,8 +2,8 @@
 #
 # Shared network with lifetravel-proxy (one-time): docker network create lifetravel_net
 #
-# Set NEXT_PUBLIC_INGRESS_API in .env next to this file, or export before build, e.g.:
-#   NEXT_PUBLIC_INGRESS_API=wss://api.lifetravel.ai/api docker compose up --build
+# Set NEXT_PUBLIC_INGRESS_API and NEXT_PUBLIC_APP_MODE in .env next to this file, or export before build, e.g.:
+#   NEXT_PUBLIC_INGRESS_API=wss://api.lifetravel.ai/api NEXT_PUBLIC_APP_MODE=dev docker compose up --build
 
 services:
   web:
@@ -12,6 +12,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_INGRESS_API: ${NEXT_PUBLIC_INGRESS_API:-}
+        NEXT_PUBLIC_APP_MODE: ${NEXT_PUBLIC_APP_MODE:-prod}
     ports:
       - "0.0.0.0:${PORT:-3000}:3000"
     environment:

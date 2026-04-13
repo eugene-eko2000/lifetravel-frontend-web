@@ -51,6 +51,8 @@ interface StatusMessage {
 }
 
 const INGRESS_API = process.env.NEXT_PUBLIC_INGRESS_API ?? "ws://localhost:8080";
+const APP_MODE = process.env.NEXT_PUBLIC_APP_MODE ?? "prod";
+const isDevMode = APP_MODE === "dev";
 
 const TRIP_PAGE_SIZE = 10;
 
@@ -766,15 +768,17 @@ export default function Home() {
         <h1 className="w-full min-w-0 truncate px-8 text-center text-base font-semibold text-foreground sm:px-12 sm:text-lg">
           LifeTravel Chat
         </h1>
-        <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
-          <button
-            type="button"
-            onClick={toggleDebugPanel}
-            className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-hover transition-colors"
-          >
-            {isDebugPanelOpen ? "Hide debug" : "Show debug"}
-          </button>
-        </div>
+        {isDevMode && (
+          <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
+            <button
+              type="button"
+              onClick={toggleDebugPanel}
+              className="rounded-md border border-border bg-surface px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-hover transition-colors"
+            >
+              {isDebugPanelOpen ? "Hide debug" : "Show debug"}
+            </button>
+          </div>
+        )}
       </header>
 
       {/* Messages Area — below `md`, debug uses a horizontal split (stacked panes); `md+` keeps left/right. */}
