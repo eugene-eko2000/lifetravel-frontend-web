@@ -473,6 +473,15 @@ export default function Home() {
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [tripModal, setTripModal] = useState<{ data: unknown; mountKey: number } | null>(null);
 
+  /** True until the latest assistant turn has at least one block or missing-info (covers pre-status gap and active status). */
+  const hasIncompleteAssistantTurn = useMemo(() => {
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return false;
+    const miss = last.missingInfoText;
+    if (typeof miss === "string" && miss.trim().length > 0) return false;
+    return (last.blocks?.length ?? 0) === 0;
+  }, [messages]);
+
   const openTripModal = useCallback((data: unknown) => {
     setTripModal((prev) => ({
       data,
@@ -787,7 +796,7 @@ export default function Home() {
             <button
               type="button"
               onClick={startNewTrip}
-              disabled={isConnecting || isStreaming}
+              disabled={isConnecting || hasIncompleteAssistantTurn}
               className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600"
             >
               New Trip
