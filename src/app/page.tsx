@@ -787,7 +787,8 @@ export default function Home() {
             <button
               type="button"
               onClick={startNewTrip}
-              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+              disabled={isConnecting || isStreaming}
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-40 disabled:hover:bg-blue-600"
             >
               New Trip
             </button>
