@@ -750,6 +750,20 @@ export default function Home() {
     e.preventDefault();
   };
 
+  const startNewTrip = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    setMessages([]);
+    setDebugMessages([]);
+    setIsConnecting(false);
+    setIsStreaming(false);
+    setTripModal(null);
+    lastPromptIdRef.current = null;
+    textareaRef.current?.focus();
+  }, []);
+
   const toggleDebugPanel = () => {
     setIsDebugPanelOpen((prev) => {
       if (prev) {
@@ -768,8 +782,17 @@ export default function Home() {
         <h1 className="w-full min-w-0 truncate px-8 text-center text-base font-semibold text-foreground sm:px-12 sm:text-lg">
           LifeTravel Chat
         </h1>
-        {isDevMode && (
-          <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
+        <div className="absolute right-2 flex items-center gap-1.5 sm:right-4 sm:gap-2">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={startNewTrip}
+              className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+            >
+              New Trip
+            </button>
+          )}
+          {isDevMode && (
             <button
               type="button"
               onClick={toggleDebugPanel}
@@ -777,8 +800,8 @@ export default function Home() {
             >
               {isDebugPanelOpen ? "Hide debug" : "Show debug"}
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </header>
 
       {/* Messages Area — below `md`, debug uses a horizontal split (stacked panes); `md+` keeps left/right. */}
