@@ -590,7 +590,8 @@ export default function Home() {
     setInput("");
     setIsConnecting(true);
 
-    // Establish WebSocket connection
+    // Establish WebSocket connection (RFC 7692 permessage-deflate is negotiated by the
+    // browser when the server enables it; frames are still read as text in onmessage).
     const wsUrl = `${INGRESS_API}/api/v1/trip`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
