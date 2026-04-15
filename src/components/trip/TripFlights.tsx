@@ -93,7 +93,7 @@ function FlightLegHeaderGrid({ rows }: { rows: FlightLegHeaderParts[] }) {
         {rows.map((row, i) => (
           <div
             key={i}
-            className="rounded-lg border border-border/60 bg-background/30 p-2.5 text-sm shadow-sm"
+            className="rounded-lg border border-border/70 bg-background/70 p-2.5 text-sm shadow-sm"
           >
             <dl className="space-y-2 text-sm">
               <div className="flex flex-col gap-0.5">
@@ -121,13 +121,13 @@ function FlightLegHeaderGrid({ rows }: { rows: FlightLegHeaderParts[] }) {
 
       {/* md+: aligned columns */}
       <div className="hidden min-w-0 md:block">
-        <div className="grid grid-cols-4 gap-2 border-b border-border/50 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
+        <div className="grid grid-cols-4 gap-2 border-b border-border/70 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted">
           <span className="min-w-0">From – to</span>
           <span className="min-w-0">Date & time</span>
           <span className="min-w-0">Duration</span>
           <span className="min-w-0">Stops</span>
         </div>
-        <div className="divide-y divide-border/40">
+        <div className="divide-y divide-border/70">
           {rows.map((row, i) => (
             <div key={i} className="grid grid-cols-4 gap-2 py-2 text-sm">
               <span className="min-w-0 break-words font-medium text-foreground">{row.route}</span>
@@ -193,7 +193,7 @@ function FlightOptionBox({
         id={`${detailId}-summary`}
         className={`flex w-full min-w-0 touch-manipulation items-start ${
           showExpandChevrons ? "gap-2" : ""
-        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/70 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
@@ -219,7 +219,7 @@ function FlightOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
+          className="border-t border-border/70 bg-background/70 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <FlightSegmentDetailList flight={parentFlight} segmentsFrom={opt} />
         </div>
@@ -297,7 +297,7 @@ function FlightSegmentFallback({ flight }: { flight: UnknownRecord }) {
   const from = pickString(flight, ["from", "origin"]);
   const to = pickString(flight, ["to", "destination"]);
   return (
-    <div className="rounded-md border border-border/50 bg-background/30 p-3">
+    <div className="rounded-md border border-border/70 bg-background/70 p-3">
       <p className="text-sm font-medium text-foreground">{[from, to].filter(Boolean).join(" → ") || "Route"}</p>
       <p className="mt-1 text-xs text-muted">{[dep, arr].filter(Boolean).join(" → ") || "—"}</p>
       <p className="mt-2 text-[10px] leading-snug text-muted">
@@ -313,7 +313,7 @@ function FlightSegmentConnectionRow({ prev, next }: { prev: UnknownRecord; next:
   const hub = formatAirportLineWithMaps(next, "departure", maps);
   if (!layover) return null;
   return (
-    <div className="rounded-md border border-dashed border-border/60 bg-background/20 px-3 py-2 text-xs">
+    <div className="rounded-md border border-dashed border-border/70 bg-background/70 px-3 py-2 text-xs">
       <span className="font-medium text-muted">Connection at </span>
       <span className="font-bold text-foreground">
         {hub} · {layover}
@@ -360,7 +360,7 @@ function FlightSegmentCard({
   const labelTotal = useLegLabels ? segmentCountInLeg : total;
 
   return (
-    <div className="rounded-md border border-border/50 bg-background/30 p-3">
+    <div className="rounded-md border border-border/70 bg-background/70 p-3">
       <p className="text-[10px] font-medium uppercase tracking-wide text-muted">
         Segment {labelNum}
         {labelTotal > 1 ? ` of ${labelTotal}` : ""}
@@ -377,7 +377,7 @@ function FlightSegmentCard({
             <col className="w-[24%]" />
           </colgroup>
           <thead>
-            <tr className="border-b border-border/60">
+            <tr className="border-b border-border/70">
               <th className="pb-1.5 pr-1 text-left align-bottom text-[10px] font-medium uppercase tracking-wide text-muted sm:pr-2">
                 Departure
               </th>
@@ -407,7 +407,7 @@ function FlightSegmentCard({
         </table>
       </div>
       {hasFareExtras ? (
-        <dl className="mt-3 space-y-2 border-t border-border/40 pt-3 text-xs">
+        <dl className="mt-3 space-y-2 border-t border-border/70 pt-3 text-xs">
           {cabinLabel ? (
             <div>
               <dt className="text-[10px] font-medium uppercase text-muted">Cabin class</dt>
@@ -482,9 +482,9 @@ function FlightSegmentDetailList({
         return (
           <div
             key={gi}
-            className="overflow-hidden rounded-lg border border-border/70 bg-background/25"
+            className="overflow-hidden rounded-lg border border-border/70 bg-background/70"
           >
-            <div className="border-b border-border/50 bg-muted/20 px-3 py-2">
+            <div className="border-b border-border/70 bg-muted/70 px-3 py-2">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-foreground">{legLabel}</p>
               {group.length > 1 ? (
                 <p className="mt-0.5 text-[10px] text-muted">
@@ -554,7 +554,7 @@ function FlightRow({
       : [departSummary, arriveSummary].filter(Boolean).join(" → ");
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
       <button
         type="button"
         onClick={() => setDetailsOpen((v) => !v)}
@@ -563,7 +563,7 @@ function FlightRow({
         id={`flight-summary-${labelIndex}`}
         className={`flex w-full min-w-0 touch-manipulation items-start ${
           showExpandChevrons ? "gap-2" : ""
-        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/70 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >

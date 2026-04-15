@@ -152,15 +152,15 @@ export function formatHotelCityLine(cityCode: string | undefined, maps: TripLoca
 }
 
 /** Default shell for a single fare/hotel option card. */
-export const DEFAULT_OPTION_CARD_CLASS = "border-border/80 bg-background/40";
+export const DEFAULT_OPTION_CARD_CLASS = "border-border/70 bg-background/70";
 
-/** First option in a ranked list (green border + tint). */
+/** First option in a ranked list (green border + tint), surfaces at 70% opacity. */
 export const TOP_OPTION_CARD_CLASS =
-  "border-emerald-600/70 bg-emerald-500/[0.09] ring-1 ring-inset ring-emerald-500/25";
+  "border-emerald-500/70 bg-emerald-950/70 ring-1 ring-inset ring-emerald-400/25";
 
 /** Inset for expanded flight/hotel option lists under a leg row. */
 export const LEG_OPTION_PANEL_CLASS =
-  "border-t border-border bg-background/25 px-2.5 py-2 space-y-2 rounded-b-lg sm:px-3 sm:py-2.5";
+  "border-t border-border/70 bg-background/70 px-2.5 py-2 space-y-2 rounded-b-lg sm:px-3 sm:py-2.5";
 
 export function randomSortableSuffix(): string {
   const c = globalThis.crypto;

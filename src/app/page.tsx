@@ -140,10 +140,10 @@ function TripModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="trip-modal-title"
-        className="relative flex max-h-[min(90vh,900px)] w-full max-w-full flex-col overflow-hidden rounded-xl border border-border bg-background shadow-xl sm:max-w-[96rem]"
+        className="relative flex max-h-[min(90vh,900px)] w-full max-w-full flex-col overflow-hidden rounded-xl border border-border/70 bg-background/70 shadow-xl backdrop-blur-sm sm:max-w-[96rem]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 pr-12">
+        <div className="flex shrink-0 items-center gap-3 border-b border-border/70 px-4 py-3 pr-12">
           <h2 id="trip-modal-title" className="text-sm font-semibold text-foreground">
             Trip
           </h2>
@@ -160,7 +160,7 @@ function TripModal({
         <button
           type="button"
           onClick={onClose}
-          className="absolute right-3 top-[6px] z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-surface text-foreground shadow-sm transition-colors hover:bg-surface-hover"
+          className="absolute right-3 top-[6px] z-10 flex h-8 w-8 items-center justify-center rounded-full border border-border/70 bg-surface/70 text-foreground shadow-sm transition-colors hover:bg-surface-hover/70"
           aria-label="Close"
         >
           <svg
@@ -261,7 +261,7 @@ function AssistantMessageBlocks({
               onOpenTripModal(block.data);
             }
           }}
-          className="min-w-0 max-w-full cursor-pointer overflow-x-auto rounded-lg border border-border bg-background/50 text-left outline-none transition-colors hover:bg-background/70 focus-visible:ring-2 focus-visible:ring-border"
+          className="min-w-0 max-w-full cursor-pointer overflow-x-auto rounded-xl border border-border/70 bg-background/70 text-left shadow-[0_12px_40px_-8px_rgba(0,0,0,0.65),0_4px_16px_-4px_rgba(0,0,0,0.45)] outline-none ring-1 ring-border/40 transition-[box-shadow,background-color] hover:bg-background/75 hover:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.7)] focus-visible:ring-2 focus-visible:ring-border backdrop-blur-sm"
           aria-label="Open trip in modal"
         >
           {copyBar}
@@ -838,30 +838,15 @@ export default function Home() {
               : { width: "100%" }
           }
         >
-          <div className="shrink-0 border-b border-border px-3 py-2 text-xs font-medium text-muted sm:px-4 sm:text-sm">
-            Trip
-          </div>
-          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 z-0 bg-cover bg-right bg-no-repeat"
+              style={{ backgroundImage: "url('/background.jpg')" }}
+            />
+            <div className="relative z-10 flex h-full min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden">
             {messages.length === 0 ? (
-              <div className="flex h-full min-w-0 flex-col items-center justify-center gap-3 px-3 sm:gap-4 sm:px-4">
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-surface sm:h-16 sm:w-16">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth={1.5}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-7 w-7 text-muted sm:h-8 sm:w-8"
-                  >
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                  </svg>
-                </div>
-                <p className="max-w-[min(100%,22rem)] text-center text-sm leading-snug text-muted sm:text-base">
-                  Hi, I&apos;m your personal travel assistant.
-                </p>
-              </div>
+              <div className="min-h-full min-w-0 shrink-0" aria-hidden />
             ) : (
               <div className="min-w-0 px-3 py-5 sm:px-4 sm:py-6">
                 {messages.map((message) => (
@@ -874,7 +859,7 @@ export default function Home() {
                     <div
                       className={`min-w-0 rounded-2xl px-4 py-3 ${
                         message.role === "user"
-                          ? "max-w-[85%] bg-user-bubble text-foreground"
+                          ? "max-w-[85%] border border-border/80 bg-user-bubble/80 text-foreground shadow-[0_10px_40px_-10px_rgba(0,0,0,0.55),0_4px_14px_-4px_rgba(0,0,0,0.35)] backdrop-blur-sm"
                           : "w-full max-w-[95%] bg-assistant-bubble text-foreground"
                       }`}
                     >
@@ -949,6 +934,7 @@ export default function Home() {
                 <div ref={messagesEndRef} className="h-0 w-full shrink-0" aria-hidden />
               </div>
             )}
+            </div>
           </div>
         </section>
 
@@ -1011,10 +997,10 @@ export default function Home() {
       </main>
 
       {/* Input Area */}
-      <footer className="min-w-0 max-w-full shrink-0 overflow-x-hidden border-t border-border bg-background px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-4 sm:pb-4 sm:pt-4">
+      <footer className="min-w-0 max-w-full shrink-0 overflow-x-hidden border-t border-border/70 bg-background/70 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-sm sm:px-4 sm:pb-4 sm:pt-4">
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-2 rounded-2xl border border-border bg-surface px-3 py-2.5 focus-within:border-muted transition-colors sm:gap-3 sm:px-4 sm:py-3"
+          className="mx-auto flex w-full min-w-0 max-w-3xl items-end gap-2 rounded-2xl border border-border/70 bg-surface/70 px-3 py-2.5 backdrop-blur-sm focus-within:border-muted transition-colors sm:gap-3 sm:px-4 sm:py-3"
         >
           <textarea
             ref={textareaRef}
@@ -1039,11 +1025,6 @@ export default function Home() {
             />
           </button>
         </form>
-        {input.trim() ? (
-          <p className="mx-auto mt-1.5 max-w-3xl px-0.5 text-left text-[10px] text-muted sm:mt-2 sm:text-xs">
-            Press Enter to send, Shift+Enter for a new line
-          </p>
-        ) : null}
       </footer>
 
       {tripModal != null && (

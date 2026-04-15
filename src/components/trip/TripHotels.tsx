@@ -309,7 +309,7 @@ function HotelOptionBox({
         id={`${detailId}-summary`}
         className={`flex w-full min-w-0 touch-manipulation items-start ${
           showExpandChevrons ? "gap-2" : ""
-        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/70 sm:p-3 ${
           detailsOpen ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
@@ -337,7 +337,7 @@ function HotelOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
+          className="border-t border-border/70 bg-background/70 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <HotelStayDetailsPanel offer={offer} />
         </div>
@@ -347,7 +347,7 @@ function HotelOptionBox({
           id={detailId}
           role="region"
           aria-labelledby={`${detailId}-summary`}
-          className="border-t border-border bg-background/25 px-2.5 py-2.5 sm:px-3 sm:py-3"
+          className="border-t border-border/70 bg-background/70 px-2.5 py-2.5 sm:px-3 sm:py-3"
         >
           <p className="text-xs text-muted">No offer details available for this stay.</p>
         </div>
@@ -442,14 +442,14 @@ function HotelRow({
   const canSortOptions = Boolean(onOptionsReorder) && objectOptions.length > 1;
 
   return (
-    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/80 bg-background/40">
+    <div className="w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         className={`flex w-full min-w-0 touch-manipulation items-start ${
           showExpandChevrons ? "gap-2" : ""
-        } p-2.5 text-left transition-colors hover:bg-surface-hover/50 sm:p-3 ${
+        } p-2.5 text-left transition-colors hover:bg-surface-hover/70 sm:p-3 ${
           open ? "rounded-t-lg" : "rounded-lg"
         }`}
       >
