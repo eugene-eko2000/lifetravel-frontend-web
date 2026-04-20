@@ -1009,7 +1009,7 @@ export default function Home() {
             onKeyDown={handleKeyDown}
             placeholder="Please describe your travel plan in a free form..."
             rows={1}
-            className="max-h-48 min-h-[22px] min-w-0 flex-1 resize-none bg-transparent text-left text-xs text-foreground placeholder-muted outline-none sm:min-h-[24px] sm:text-sm"
+            className="max-h-48 min-h-[26px] min-w-0 flex-1 resize-none bg-transparent text-left text-base text-foreground placeholder-muted outline-none sm:min-h-[28px] sm:text-lg"
             disabled={isConnecting}
           />
           <button
