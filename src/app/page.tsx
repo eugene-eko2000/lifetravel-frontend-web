@@ -192,6 +192,7 @@ function AssistantMessageBlocks({
   isStreaming,
   isDebugPanelOpen,
   onOpenTripModal,
+  suppressLoadingPulse = false,
 }: {
   message: Message;
   copiedBlockKey: string | null;
@@ -200,6 +201,7 @@ function AssistantMessageBlocks({
   isStreaming: boolean;
   isDebugPanelOpen: boolean;
   onOpenTripModal: (data: unknown) => void;
+  suppressLoadingPulse?: boolean;
 }) {
   const blocks = message.blocks ?? [];
   const tripIndices = useMemo(() => {
@@ -334,8 +336,149 @@ function AssistantMessageBlocks({
           </button>
         </div>
       )}
-      {(isConnecting || isStreaming) && <span className="inline-block animate-pulse">▊</span>}
+      {(isConnecting || isStreaming) &&
+        !suppressLoadingPulse && <span className="inline-block animate-pulse">▊</span>}
     </>
+  );
+}
+
+function AmbientStatusOverlayInner({ statusText }: { statusText: string | undefined }) {
+  const trimmed = statusText?.trim() ?? "";
+  const pulseOnly = trimmed.length === 0;
+  const ringCount = 10;
+  const bloomCount = 5;
+  /** Longer = slower motion (whole ambient layer). */
+  const breatheMs = 14000;
+  const ringMs = 14000;
+  const bloomMs = 16000;
+
+  return (
+    <div
+      className="pointer-events-none fixed inset-0 z-[90] flex items-center justify-center overflow-hidden"
+      aria-live="polite"
+      role="status"
+    >
+      {/* Gray wash — opacity animates (whole-window “gradient” feel) */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(circle at 50% 45%, rgba(150,150,150,0.18) 0%, rgba(110,110,110,0.06) 38%, transparent 62%)",
+          animation: `lt-status-breathe ${breatheMs / 1000}s ease-in-out infinite`,
+        }}
+      />
+      {/* Expanding gray rings — SVG so stacking / Tailwind palette cannot hide them */}
+      <svg
+        aria-hidden
+        className="absolute inset-0 h-full w-full"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="xMidYMid slice"
+      >
+        <defs>
+          {/* Thick soft ring: transparent center & outer edge, gray band in the middle */}
+          <radialGradient id="lt-ring-grad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="26%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="36%" stopColor="rgba(165,165,165,0.22)" />
+            <stop offset="50%" stopColor="rgba(198,198,198,0.52)" />
+            <stop offset="64%" stopColor="rgba(165,165,165,0.22)" />
+            <stop offset="76%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+          </radialGradient>
+          <radialGradient id="lt-ambient-bloom" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="rgba(0,0,0,0)" />
+            <stop offset="22%" stopColor="rgba(165,165,165,0.08)" />
+            <stop offset="48%" stopColor="rgba(182,182,182,0.22)" />
+            <stop offset="72%" stopColor="rgba(155,155,155,0.08)" />
+            <stop offset="100%" stopColor="rgba(0,0,0,0)" />
+          </radialGradient>
+        </defs>
+        {Array.from({ length: bloomCount }, (_, i) => (
+          <circle
+            key={`bloom-${i}`}
+            cx="50"
+            cy="50"
+            r="0"
+            fill="url(#lt-ambient-bloom)"
+          >
+            <animate
+              attributeName="r"
+              values="0;95"
+              dur={`${bloomMs / 1000}s`}
+              repeatCount="indefinite"
+              begin={`${(bloomMs * i) / bloomCount}ms`}
+              calcMode="spline"
+              keySplines="0.2 0.8 0.2 1"
+              keyTimes="0;1"
+            />
+            <animate
+              attributeName="opacity"
+              values="0.55;0"
+              dur={`${bloomMs / 1000}s`}
+              repeatCount="indefinite"
+              begin={`${(bloomMs * i) / bloomCount}ms`}
+            />
+          </circle>
+        ))}
+        {Array.from({ length: ringCount }, (_, i) => (
+          <circle key={`ring-${i}`} cx="50" cy="50" r="0" fill="url(#lt-ring-grad)">
+            <animate
+              attributeName="r"
+              values="0;95"
+              dur={`${ringMs / 1000}s`}
+              repeatCount="indefinite"
+              begin={`${(ringMs * i) / ringCount}ms`}
+              calcMode="spline"
+              keySplines="0.1 0.9 0.2 1"
+              keyTimes="0;1"
+            />
+            <animate
+              attributeName="opacity"
+              values="0.5;0"
+              dur={`${ringMs / 1000}s`}
+              repeatCount="indefinite"
+              begin={`${(ringMs * i) / ringCount}ms`}
+            />
+          </circle>
+        ))}
+      </svg>
+      <div className="relative z-[1] max-w-[min(90vw,42rem)] px-6 text-center sm:px-10">
+        {pulseOnly ? (
+          <span
+            className="inline-block text-6xl font-extrabold leading-none tracking-tight text-foreground sm:text-7xl"
+            style={{
+              animation: "pulse 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+              textShadow:
+                "0 2px 8px rgba(0,0,0,0.65), 0 6px 24px rgba(0,0,0,0.45), 0 12px 40px rgba(0,0,0,0.35), 0 0 28px rgba(190,190,190,0.45)",
+            }}
+          >
+            ▊
+          </span>
+        ) : (
+          <p
+            className="text-2xl font-extrabold leading-snug tracking-tight text-foreground sm:text-3xl"
+            style={{
+              textShadow:
+                "0 2px 8px rgba(0,0,0,0.65), 0 6px 24px rgba(0,0,0,0.45), 0 12px 40px rgba(0,0,0,0.35), 0 0 28px rgba(190,190,190,0.45)",
+            }}
+          >
+            {trimmed}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AmbientStatusPortal({ show, statusText }: { show: boolean; statusText: string | undefined }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  if (!show || !mounted) return null;
+  return createPortal(
+    <AmbientStatusOverlayInner statusText={statusText} />,
+    document.body
   );
 }
 
@@ -472,6 +615,20 @@ export default function Home() {
   const [copiedBlockKey, setCopiedBlockKey] = useState<string | null>(null);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [tripModal, setTripModal] = useState<{ data: unknown; mountKey: number } | null>(null);
+
+  /** Full-screen gray ripples + centered status (matches lifetravel-mobile). */
+  const ambientStatusCoversChat = useMemo(() => {
+    if (tripModal != null) return false;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return false;
+    if (!isConnecting && !isStreaming) return false;
+    if ((last.blocks?.length ?? 0) > 0) return false;
+    const miss = last.missingInfoText;
+    if (typeof miss === "string" && miss.trim().length > 0) return false;
+    const hasStatus = typeof last.statusText === "string" && last.statusText.trim().length > 0;
+    const waitingForStreamBody = !last.content?.trim();
+    return hasStatus || waitingForStreamBody;
+  }, [messages, isConnecting, isStreaming, tripModal]);
 
   /** True until the latest assistant turn has at least one block or missing-info (covers pre-status gap and active status). */
   const hasIncompleteAssistantTurn = useMemo(() => {
@@ -647,7 +804,8 @@ export default function Home() {
             : rawDebugPayload;
         const debugMessage = parseDebugMessage(mergedDebugPayload, rawData, envelopeId);
         setDebugMessages((prev) => [...prev, { id: crypto.randomUUID(), data: debugMessage }]);
-        setIsStreaming(false);
+        // Do not clear isStreaming here — debug can arrive while the trip is still composing;
+        // clearing it would hide the centered status / ripple overlay prematurely.
         return;
       }
 
@@ -664,7 +822,6 @@ export default function Home() {
               : msg
           )
         );
-        setIsStreaming(false);
         return;
       }
 
@@ -887,6 +1044,7 @@ export default function Home() {
                             isStreaming={isStreaming}
                             isDebugPanelOpen={isDebugPanelOpen}
                             onOpenTripModal={openTripModal}
+                            suppressLoadingPulse={ambientStatusCoversChat}
                           />
                         )}
                         {message.role === "assistant" &&
@@ -910,23 +1068,17 @@ export default function Home() {
                                 <span className="whitespace-pre-wrap">{message.content}</span>
                               )}
                               {(isConnecting || isStreaming) &&
-                                message.missingInfoText === undefined && (
+                                message.missingInfoText === undefined &&
+                                !ambientStatusCoversChat && (
                                   <span className="inline-block animate-pulse">▊</span>
                                 )}
                             </>
                           )}
-                        {message.role === "assistant" && message.statusText && (
-                          <div className="rounded-lg border border-border bg-background/50 p-3 text-xs">
-                            <div className="flex items-center gap-2">
-                              <img
-                                src="/status-send-icon.svg"
-                                alt=""
-                                className="h-5 w-5 shrink-0"
-                              />
-                              <span className="text-foreground">{message.statusText}</span>
-                            </div>
-                          </div>
-                        )}
+                        {message.role === "assistant" &&
+                          message.statusText &&
+                          !ambientStatusCoversChat && (
+                            <p className="mt-2 text-left text-xs text-muted">{message.statusText}</p>
+                          )}
                       </div>
                     </div>
                   </div>
@@ -1009,7 +1161,7 @@ export default function Home() {
             onKeyDown={handleKeyDown}
             placeholder="Please describe your travel plan in a free form..."
             rows={1}
-            className="max-h-48 min-h-[26px] min-w-0 flex-1 resize-none bg-transparent text-left text-base text-foreground placeholder-muted outline-none sm:min-h-[28px] sm:text-lg"
+            className="max-h-48 min-h-[22px] min-w-0 flex-1 resize-none bg-transparent text-left text-sm text-foreground placeholder-muted outline-none sm:min-h-[24px]"
             disabled={isConnecting}
           />
           <button
@@ -1026,6 +1178,11 @@ export default function Home() {
           </button>
         </form>
       </footer>
+
+      <AmbientStatusPortal
+        show={ambientStatusCoversChat}
+        statusText={messages[messages.length - 1]?.statusText}
+      />
 
       {tripModal != null && (
         <TripModal
