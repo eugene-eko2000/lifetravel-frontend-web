@@ -1,21 +1,6 @@
 "use client";
 
-import {
-  DndContext,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { DualPriceDisplay, formatHotelDualPriceParts } from "./tripDualPrice";
 import { useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
 import type { UnknownRecord } from "./tripShared";
@@ -34,7 +19,7 @@ import {
   TOP_OPTION_CARD_CLASS,
 } from "./tripShared";
 import { formatFlightDateTime, toTitleCaseWords } from "./tripFlightFormatting";
-import { SortableOptionRow } from "./SortableOptionRow";
+import { AnimatedOptionStack } from "./AnimatedOptionStack";
 
 /** First Amadeus offer in a hotel-offers option, or the option itself when it already is an offer-shaped record. */
 function getPrimaryHotelOffer(opt: UnknownRecord): UnknownRecord | undefined {
@@ -258,12 +243,14 @@ function HotelOptionBox({
   parentStay,
   parentHotelIndex,
   showExpandChevrons = false,
+  selectToTop,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentStay: UnknownRecord;
   parentHotelIndex: number;
   showExpandChevrons?: boolean;
+  selectToTop?: () => void;
 }) {
   const tripCurrency = useTripCurrency();
   const maps = useTripLocationMaps();
@@ -332,6 +319,17 @@ function HotelOptionBox({
           ) : null}
         </div>
       </button>
+      {selectToTop ? (
+        <div className="flex justify-end border-t border-border/40 px-2.5 py-1.5 sm:px-3">
+          <button
+            type="button"
+            onClick={selectToTop}
+            className="rounded-md border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-hover/70"
+          >
+            Select
+          </button>
+        </div>
+      ) : null}
       {detailsOpen && showDetailsPanel && (
         <div
           id={detailId}
@@ -353,68 +351,6 @@ function HotelOptionBox({
         </div>
       )}
     </div>
-  );
-}
-function SortableHotelOptionsList({
-  stay,
-  hotelIndex,
-  legIndex,
-  objectOptions,
-  onReorder,
-  showExpandChevrons = false,
-}: {
-  stay: UnknownRecord;
-  hotelIndex: number;
-  legIndex: number;
-  objectOptions: UnknownRecord[];
-  onReorder: (newOrder: UnknownRecord[]) => void;
-  showExpandChevrons?: boolean;
-}) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 6,
-      },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-  const sortableIds = useMemo(
-    () => objectOptions.map((opt) => getHotelOptionSortableId(opt, legIndex, hotelIndex)),
-    [objectOptions, legIndex, hotelIndex]
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = sortableIds.indexOf(String(active.id));
-    const newIndex = sortableIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
-    onReorder(arrayMove(objectOptions, oldIndex, newIndex));
-  };
-
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-      <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2">
-          {objectOptions.map((opt, i) => (
-            <SortableOptionRow
-              key={sortableIds[i]}
-              id={sortableIds[i]}
-              ariaLabel="Hotel option: press and hold, then drag to reorder"
-            >
-              <HotelOptionBox
-                opt={opt}
-                optionIndex={i}
-                parentStay={stay}
-                parentHotelIndex={hotelIndex}
-                showExpandChevrons={showExpandChevrons}
-              />
-            </SortableOptionRow>
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
   );
 }
 function HotelRow({
@@ -470,29 +406,37 @@ function HotelRow({
       {open && (
         <div className={LEG_OPTION_PANEL_CLASS}>
           {objectOptions.length > 0 ? (
-            canSortOptions && onOptionsReorder ? (
-              <SortableHotelOptionsList
-                stay={stay}
-                hotelIndex={labelIndex}
-                legIndex={legIndex}
-                objectOptions={objectOptions}
-                onReorder={onOptionsReorder}
-                showExpandChevrons={showExpandChevrons}
-              />
-            ) : (
-              <div className="space-y-2">
-                {objectOptions.map((opt, i) => (
-                  <HotelOptionBox
-                    key={i}
-                    opt={opt}
-                    optionIndex={i}
-                    parentStay={stay}
-                    parentHotelIndex={labelIndex}
-                    showExpandChevrons={showExpandChevrons}
-                  />
-                ))}
-              </div>
-            )
+            <AnimatedOptionStack
+              className="flex flex-col gap-2"
+              orderKey={objectOptions
+                .map((o) => getHotelOptionSortableId(o, legIndex, labelIndex))
+                .join("\0")}
+            >
+              {objectOptions.map((opt, i) => {
+                const flipId = getHotelOptionSortableId(opt, legIndex, labelIndex);
+                return (
+                  <div key={flipId} data-flip-id={flipId}>
+                    <HotelOptionBox
+                      opt={opt}
+                      optionIndex={i}
+                      parentStay={stay}
+                      parentHotelIndex={labelIndex}
+                      showExpandChevrons={showExpandChevrons}
+                      selectToTop={
+                        canSortOptions && onOptionsReorder && i > 0
+                          ? () => {
+                              const next = [...objectOptions];
+                              const [moved] = next.splice(i, 1);
+                              next.unshift(moved);
+                              onOptionsReorder(next);
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </AnimatedOptionStack>
           ) : (
             <p className="pl-2.5 text-xs text-muted sm:pl-3">No hotel options listed.</p>
           )}

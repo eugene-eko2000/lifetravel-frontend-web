@@ -1,21 +1,6 @@
 "use client";
 
-import {
-  DndContext,
-  closestCorners,
-  KeyboardSensor,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from "@dnd-kit/core";
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from "@dnd-kit/sortable";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useState } from "react";
 import { DualPriceDisplay, formatAmadeusDualPriceParts } from "./tripDualPrice";
 import { useTripCarriers, useTripCurrency, useTripLocationMaps } from "./TripCardContexts";
 import type { UnknownRecord } from "./tripShared";
@@ -54,7 +39,7 @@ import {
   pickFlightOptionRouteAirportCodes,
   resolveFlightHeaderPlaceLabel,
 } from "./tripFlightFormatting";
-import { SortableOptionRow } from "./SortableOptionRow";
+import { AnimatedOptionStack } from "./AnimatedOptionStack";
 
 /** When `priceOnly`, show dual price only (header line already includes duration & stops). */
 function FlightOptionMetaLine({ opt, priceOnly }: { opt: UnknownRecord; priceOnly?: boolean }) {
@@ -149,12 +134,14 @@ function FlightOptionBox({
   parentFlight,
   parentFlightIndex,
   showExpandChevrons = false,
+  selectToTop,
 }: {
   opt: UnknownRecord;
   optionIndex: number;
   parentFlight: UnknownRecord;
   parentFlightIndex: number;
   showExpandChevrons?: boolean;
+  selectToTop?: () => void;
 }) {
   const maps = useTripLocationMaps();
   const carriers = useTripCarriers();
@@ -214,6 +201,17 @@ function FlightOptionBox({
           <FlightOptionMetaLine opt={opt} priceOnly={headerRows.length > 0} />
         </div>
       </button>
+      {selectToTop ? (
+        <div className="flex justify-end border-t border-border/40 px-2.5 py-1.5 sm:px-3">
+          <button
+            type="button"
+            onClick={selectToTop}
+            className="rounded-md border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-surface-hover/70"
+          >
+            Select
+          </button>
+        </div>
+      ) : null}
       {detailsOpen && (
         <div
           id={detailId}
@@ -225,70 +223,6 @@ function FlightOptionBox({
         </div>
       )}
     </div>
-  );
-}
-function SortableFlightOptionsList({
-  flight,
-  flightIndex,
-  legIndex,
-  parentFlightIndex,
-  objectOptions,
-  onReorder,
-  showExpandChevrons = false,
-}: {
-  flight: UnknownRecord;
-  flightIndex: number;
-  legIndex: number;
-  parentFlightIndex: number;
-  objectOptions: UnknownRecord[];
-  onReorder: (newOrder: UnknownRecord[]) => void;
-  showExpandChevrons?: boolean;
-}) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 6,
-      },
-    }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-  const sortableIds = useMemo(
-    () => objectOptions.map((opt) => getFlightOptionSortableId(opt, legIndex, flightIndex)),
-    [objectOptions, legIndex, flightIndex]
-  );
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-    const oldIndex = sortableIds.indexOf(String(active.id));
-    const newIndex = sortableIds.indexOf(String(over.id));
-    if (oldIndex < 0 || newIndex < 0) return;
-    onReorder(arrayMove(objectOptions, oldIndex, newIndex));
-  };
-
-  return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
-      <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-        <div className="space-y-2">
-          {objectOptions.map((opt, i) => (
-            <SortableOptionRow
-              key={sortableIds[i]}
-              id={sortableIds[i]}
-              ariaLabel="Fare option: press and hold, then drag to reorder"
-            >
-              <FlightOptionBox
-                opt={opt}
-                optionIndex={i}
-                parentFlight={flight}
-                parentFlightIndex={parentFlightIndex}
-                showExpandChevrons={showExpandChevrons}
-              />
-            </SortableOptionRow>
-          ))}
-        </div>
-      </SortableContext>
-    </DndContext>
   );
 }
 function FlightSegmentFallback({ flight }: { flight: UnknownRecord }) {
@@ -609,30 +543,37 @@ function FlightRow({
           className={LEG_OPTION_PANEL_CLASS}
         >
           {objectOptions.length > 0 ? (
-            canSortOptions && onOptionsReorder ? (
-              <SortableFlightOptionsList
-                flight={flight}
-                flightIndex={labelIndex}
-                legIndex={legIndex}
-                parentFlightIndex={labelIndex}
-                objectOptions={objectOptions}
-                onReorder={onOptionsReorder}
-                showExpandChevrons={showExpandChevrons}
-              />
-            ) : (
-              <div className="space-y-2">
-                {objectOptions.map((opt, i) => (
-                  <FlightOptionBox
-                    key={i}
-                    opt={opt}
-                    optionIndex={i}
-                    parentFlight={flight}
-                    parentFlightIndex={labelIndex}
-                    showExpandChevrons={showExpandChevrons}
-                  />
-                ))}
-              </div>
-            )
+            <AnimatedOptionStack
+              className="flex flex-col gap-2"
+              orderKey={objectOptions
+                .map((o) => getFlightOptionSortableId(o, legIndex, labelIndex))
+                .join("\0")}
+            >
+              {objectOptions.map((opt, i) => {
+                const flipId = getFlightOptionSortableId(opt, legIndex, labelIndex);
+                return (
+                  <div key={flipId} data-flip-id={flipId}>
+                    <FlightOptionBox
+                      opt={opt}
+                      optionIndex={i}
+                      parentFlight={flight}
+                      parentFlightIndex={labelIndex}
+                      showExpandChevrons={showExpandChevrons}
+                      selectToTop={
+                        canSortOptions && onOptionsReorder && i > 0
+                          ? () => {
+                              const next = [...objectOptions];
+                              const [moved] = next.splice(i, 1);
+                              next.unshift(moved);
+                              onOptionsReorder(next);
+                            }
+                          : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </AnimatedOptionStack>
           ) : (
             <FlightSegmentDetailList flight={flight} />
           )}

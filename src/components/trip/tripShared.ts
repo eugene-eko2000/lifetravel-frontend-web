@@ -168,7 +168,7 @@ export function randomSortableSuffix(): string {
   return `opt-${Math.random().toString(36).slice(2)}`;
 }
 
-/** Stable id per option object so SortableContext `items` order changes when data reorders (index-only ids break dnd-kit). */
+/** Stable React key per option object so list identity survives reorder (index-only keys remount every row). */
 const flightOptionSortableSuffix = new WeakMap<UnknownRecord, string>();
 const hotelOptionSortableSuffix = new WeakMap<UnknownRecord, string>();
 
