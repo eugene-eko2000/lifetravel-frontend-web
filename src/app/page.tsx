@@ -29,6 +29,8 @@ interface Message {
   statusText?: string;
   /** Assistant-only: `structured_request.output.missing_info` from `type: "missing_info"` messages */
   missingInfoText?: string;
+  /** Assistant-only: `payload.message` from `type: "no_trips"` or `type: "no_trip"` messages */
+  noTripMessage?: string;
 }
 
 interface DebugMessage {
@@ -572,6 +574,17 @@ function extractMissingInfoText(payload: unknown): string | undefined {
   return undefined;
 }
 
+/** Reads `payload.message` from `no_trips` / `no_trip` websocket envelopes. */
+function extractNoTripMessage(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const inner = (value as Record<string, unknown>).payload;
+  if (typeof inner !== "object" || inner === null) return undefined;
+  const msg = (inner as Record<string, unknown>).message;
+  if (typeof msg !== "string") return undefined;
+  const t = msg.trim();
+  return t.length > 0 ? msg : undefined;
+}
+
 /** Reads `prompt_id` from trip payloads (root or nested under ranked_trip / trip / legacy ranked_itinerary / itinerary / data / ranked). */
 function extractPromptIdFromTripPayload(value: unknown): string | undefined {
   const fromObject = (obj: Record<string, unknown>): string | undefined => {
@@ -625,6 +638,8 @@ export default function Home() {
     if ((last.blocks?.length ?? 0) > 0) return false;
     const miss = last.missingInfoText;
     if (typeof miss === "string" && miss.trim().length > 0) return false;
+    const noTrip = last.noTripMessage;
+    if (typeof noTrip === "string" && noTrip.trim().length > 0) return false;
     const hasStatus = typeof last.statusText === "string" && last.statusText.trim().length > 0;
     const waitingForStreamBody = !last.content?.trim();
     return hasStatus || waitingForStreamBody;
@@ -636,6 +651,8 @@ export default function Home() {
     if (!last || last.role !== "assistant") return false;
     const miss = last.missingInfoText;
     if (typeof miss === "string" && miss.trim().length > 0) return false;
+    const noTrip = last.noTripMessage;
+    if (typeof noTrip === "string" && noTrip.trim().length > 0) return false;
     return (last.blocks?.length ?? 0) === 0;
   }, [messages]);
 
@@ -732,6 +749,7 @@ export default function Home() {
       blocks: [],
       statusText: undefined,
       missingInfoText: undefined,
+      noTripMessage: undefined,
     };
 
     if (continuingSamePromptId) {
@@ -838,6 +856,30 @@ export default function Home() {
               ? {
                   ...msg,
                   missingInfoText: missingText,
+                  noTripMessage: undefined,
+                  statusText: undefined,
+                }
+              : msg
+          )
+        );
+        return;
+      }
+
+      if (messageType === "no_trips" || messageType === "no_trip") {
+        const noTripText =
+          extractNoTripMessage(parsedData) ?? "No trips are available for this request.";
+        if (parsedData !== null) {
+          const pid = extractPromptIdFromTripPayload(parsedData);
+          if (pid !== undefined) lastPromptIdRef.current = pid;
+        }
+        setIsStreaming(false);
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === assistantMessageId
+              ? {
+                  ...msg,
+                  noTripMessage: noTripText,
+                  missingInfoText: undefined,
                   statusText: undefined,
                 }
               : msg
@@ -1062,6 +1104,19 @@ export default function Home() {
                             </div>
                           )}
                         {message.role === "assistant" &&
+                          message.noTripMessage !== undefined &&
+                          message.noTripMessage !== "" && (
+                            <div
+                              className="rounded-lg border border-border bg-background/50 p-3 text-left"
+                              role="region"
+                              aria-label="Trip response"
+                            >
+                              <div className="whitespace-pre-wrap text-sm text-foreground">
+                                {message.noTripMessage}
+                              </div>
+                            </div>
+                          )}
+                        {message.role === "assistant" &&
                           (!message.blocks || message.blocks.length === 0) && (
                             <>
                               {message.content && (
@@ -1069,6 +1124,7 @@ export default function Home() {
                               )}
                               {(isConnecting || isStreaming) &&
                                 message.missingInfoText === undefined &&
+                                message.noTripMessage === undefined &&
                                 !ambientStatusCoversChat && (
                                   <span className="inline-block animate-pulse">▊</span>
                                 )}
